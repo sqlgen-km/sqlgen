@@ -1508,7 +1508,8 @@ func (g *generator) fileStem(f *ParsedFile) string {
 	}
 	src := f.Queries[0].Src
 	base := filepath.Base(src)
-	return strings.TrimSuffix(strings.TrimSuffix(base, ".sql"), ".sqlgen")
+	base = strings.TrimSuffix(strings.TrimSuffix(base, ".sql"), ".sqlgen")
+	return strings.ReplaceAll(base, ".", "_")
 }
 
 func baseFileName(stem string) string {
