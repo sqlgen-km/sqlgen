@@ -157,7 +157,7 @@ func (g *Generator) writeRunner(b *strings.Builder, spec engines.RunnerSpec, sql
 			return
 		}
 		// UPDATE/DELETE RETURNING: treat as exec (MySQL doesn't support it)
-		fmt.Fprintf(b, "const %s = `%s`\n\n", constName, sql)
+		fmt.Fprintf(b, "const %s = %s\n\n", constName, engines.GoString(sql))
 		fmt.Fprintf(b, "type %s struct {\n	stmt *sql.Stmt\n	db   *sql.DB\n}\n\n", spec.Name+suffix)
 
 		closeAndTx := fmt.Sprintf(`
@@ -180,7 +180,7 @@ func (r *%[1]s) withTx(tx *sql.Tx) %[2]s { return &%[1]s{stmt: tx.Stmt(r.stmt)} 
 	}
 
 	// Non-RETURNING cases: same pattern as PG
-	fmt.Fprintf(b, "const %s = `%s`\n\n", constName, sql)
+	fmt.Fprintf(b, "const %s = %s\n\n", constName, engines.GoString(sql))
 	fmt.Fprintf(b, "type %s struct {\n	stmt *sql.Stmt\n	db   *sql.DB\n}\n\n", spec.Name+suffix)
 
 	closeAndTx := fmt.Sprintf(`
@@ -225,8 +225,8 @@ func (g *Generator) writeReturningRunner(b *strings.Builder, spec engines.Runner
 	sig := spec.ParamSignature()
 	names := spec.ParamNames()
 
-	fmt.Fprintf(b, "const %s = `%s`\n\n", constName, sql)
-	fmt.Fprintf(b, "const %s = `%s`\n\n", selectConstName, selectSQL)
+	fmt.Fprintf(b, "const %s = %s\n\n", constName, engines.GoString(sql))
+	fmt.Fprintf(b, "const %s = %s\n\n", selectConstName, engines.GoString(selectSQL))
 
 	// Runner struct with TWO stmt fields
 	fmt.Fprintf(b, "type %s struct {\n	execStmt  *sql.Stmt\n	queryStmt *sql.Stmt\n	db        *sql.DB\n}\n\n", spec.Name+suffix)

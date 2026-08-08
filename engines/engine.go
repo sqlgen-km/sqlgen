@@ -104,6 +104,19 @@ func QuoteIdent(sql, dialect string) string {
 		return sql
 	}
 }
+
+// GoString returns a Go literal for the string — raw string if no backticks,
+// otherwise an escaped regular string.
+func GoString(s string) string {
+	if !strings.Contains(s, "`") {
+		return "`" + s + "`"
+	}
+	// Escape for regular Go string
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "\"", "\\\"")
+	s = strings.ReplaceAll(s, "\n", "\\n")
+	return "\"" + s + "\""
+}
 func (s RunnerSpec) ParamNames() string {
 	var b strings.Builder
 	for _, p := range s.Params {
