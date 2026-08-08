@@ -221,6 +221,7 @@ var factorys = map[string]itemsRunnerFactory{
 	"postgres": &itemsRunnerFactoryPG{},
 	"oracle": &itemsRunnerFactoryOracle{},
 	"mysql": &itemsRunnerFactoryMySQL{},
+	"sqlserver": &itemsRunnerFactoryMSSQL{},
 }
 
 func New(db *sql.DB, driver string) (ItemsQuerier, error) {

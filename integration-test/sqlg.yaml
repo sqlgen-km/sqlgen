@@ -4,6 +4,7 @@ engines:
   - pg
   - oracle
   - mysql
+  - mssql
 packages:
   - path: .
     files:
