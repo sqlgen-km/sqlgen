@@ -3,6 +3,7 @@
 package engines
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/sqlgen-km/sqlgen/ast"
@@ -92,8 +93,20 @@ func (s RunnerSpec) ParamSignature() string {
 	return b.String()
 }
 
-// ParamNames returns comma-separated argument names for calling a runner method,
-// e.g. ", name, name_1, limit".
+// QuoteIdent converts double-quoted identifiers to dialect-specific quoting.
+// PG and Oracle keep ", MySQL converts to backticks, MSSQL to brackets.
+func QuoteIdent(sql, dialect string) string {
+	switch dialect {
+	case "mysql":
+		re := regexp.MustCompile(`"([^"]*)"`)
+		return re.ReplaceAllString(sql, "`$1`")
+	case "mssql":
+		re := regexp.MustCompile(`"([^"]*)"`)
+		return re.ReplaceAllString(sql, "[$1]")
+	default:
+		return sql
+	}
+}
 func (s RunnerSpec) ParamNames() string {
 	var b strings.Builder
 	for _, p := range s.Params {

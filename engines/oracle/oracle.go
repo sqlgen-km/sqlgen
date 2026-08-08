@@ -81,7 +81,7 @@ func (g *Generator) renderSQL(spec engines.RunnerSpec) string {
 	// RETURNING → RETURNING ... INTO :outN (Oracle requires INTO clause)
 	sql = g.transformReturning(sql, spec.Stmt)
 
-	return sql
+	return engines.QuoteIdent(sql, "oracle")
 }
 
 // renderMerge builds an Oracle MERGE statement from an INSERT with ON CONFLICT.

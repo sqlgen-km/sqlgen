@@ -73,7 +73,7 @@ func (g *Generator) renderSQL(spec engines.RunnerSpec) string {
 	// Strip FROM dual (Oracle-ism from vitess)
 	sql = strings.ReplaceAll(sql, " FROM dual", "")
 
-	return sql
+	return engines.QuoteIdent(sql, "mysql")
 }
 
 // hasReturning checks if the spec has a RETURNING clause (any kind).
@@ -111,7 +111,7 @@ func handleOnConflict(sql string, stmt ast.Statement) string {
 		sets = append(sets, fmt.Sprintf("%s = VALUES(%s)", s.Col, s.Col))
 	}
 	sql = sql + " ON DUPLICATE KEY UPDATE " + strings.Join(sets, ", ")
-	return sql
+	return engines.QuoteIdent(sql, "mysql")
 }
 
 // convertILIKE transforms LIKE to case-insensitive LOWER pattern for MySQL.

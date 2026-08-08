@@ -72,7 +72,7 @@ func (g *Generator) renderSQL(spec engines.RunnerSpec) string {
 	// Strip FROM dual (Oracle-ism from vitess)
 	sql = strings.ReplaceAll(sql, " FROM dual", "")
 
-	return sql
+	return engines.QuoteIdent(sql, "mssql")
 }
 
 // ---------------------------------------------------------------------------
@@ -167,7 +167,7 @@ func (g *Generator) renderMerge(ins *ast.InsertStmt) string {
 	// NOW() → GETDATE()
 	sql = strings.ReplaceAll(sql, "now()", "GETDATE()")
 
-	return sql
+	return engines.QuoteIdent(sql, "mssql")
 }
 
 // ---------------------------------------------------------------------------
@@ -200,7 +200,7 @@ func mssqlReturningToOutput(sql string) string {
 		return fmt.Sprintf("%s OUTPUT %s WHERE %s", m[1], cols, m[2])
 	}
 
-	return sql
+	return engines.QuoteIdent(sql, "mssql")
 }
 
 // mssqlOutputCols transforms column names for OUTPUT: "id" → "INSERTED.id"

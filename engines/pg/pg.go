@@ -56,7 +56,7 @@ func (g *Generator) renderSQL(spec engines.RunnerSpec) string {
 	}
 	// Strip FROM dual (Oracle-ism from vitess for bare SELECT without FROM)
 	sql = strings.ReplaceAll(sql, " FROM dual", "")
-	return sql
+	return engines.QuoteIdent(sql, "pg")
 }
 
 func (g *Generator) writeRunner(b *strings.Builder, spec engines.RunnerSpec, sql, suffix string) {
