@@ -1,0 +1,6 @@
+*.exe
+*.test
+*.out
+vendor/
+sqlgen
+/sql-generator

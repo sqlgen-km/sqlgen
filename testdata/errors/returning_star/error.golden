@@ -1,0 +1,1 @@
+RETURNING * not supported; use RETURNING col for single column

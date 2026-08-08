@@ -1,0 +1,10 @@
+tags:
+  - json
+engines:
+  - pg
+  - oracle
+  - mysql
+packages:
+  - path: .
+    files:
+      - items.sql

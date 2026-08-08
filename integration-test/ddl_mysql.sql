@@ -1,0 +1,11 @@
+-- MySQL DDL for sqlgen integration test
+CREATE TABLE IF NOT EXISTS items (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name        VARCHAR(128) NOT NULL,
+    category    VARCHAR(64)  NOT NULL DEFAULT '',
+    price       DECIMAL(10,2) NOT NULL DEFAULT 0,
+    stock       INT          NOT NULL DEFAULT 0,
+    is_active   TINYINT(1)   NOT NULL DEFAULT 1,
+    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
