@@ -62,6 +62,10 @@ func (g *Generator) renderSQL(spec engines.RunnerSpec) string {
 
 	sql := g.d.Render(spec.Stmt)
 
+	// Oracle GROUP BY + CLOB workaround: restructure LEFT JOIN + COUNT
+	// into scalar subquery to avoid GROUP BY on CLOB columns.
+	sql = rewriteGroupByToSubquery(sql)
+
 	// ILIKE → LOWER(x) LIKE LOWER(y)
 	if spec.HasILIKE {
 		sql = transformILIKEOracle(sql)
@@ -308,6 +312,42 @@ func namesWithSwap(spec engines.RunnerSpec) string {
 	parts = append(parts, ", "+params[len(params)-1].Name)  // offset (was last)
 	parts = append(parts, ", "+params[len(params)-2].Name)  // limit (was second-to-last)
 	return strings.Join(parts, "")
+}
+
+var groupBySubqueryRe = regexp.MustCompile(
+	`(?is)^(SELECT\s+.+?),\s+(count\([^)]+\))\s+(FROM\s+\S+\s+\S+)\s+(LEFT\s+JOIN\s+(\S+)\s+(\S+)\s+ON\s+(.+?))(?:\s+(WHERE\s+.+?))?\s+(GROUP\s+BY\s+.+?)(\s+ORDER\s+BY\s+.+)?$`)
+
+func rewriteGroupByToSubquery(sql string) string {
+	m := groupBySubqueryRe.FindStringSubmatch(sql)
+	if m == nil {
+		return sql
+	}
+	// Only restructure if GROUP BY has exactly one column.
+	// Multi-column GROUP BY means all non-aggregate columns are already listed.
+	groupBy := strings.TrimSpace(m[9])
+	if strings.Count(groupBy, ",") > 0 {
+		return sql
+	}
+	cols := m[1]
+	countExpr := m[2]
+	fromMain := m[3]
+	joinedTable := strings.TrimSpace(m[5])
+	jAlias := strings.TrimSpace(m[6])
+	onCond := strings.TrimSpace(m[7])
+	whereClause := ""
+	if m[8] != "" {
+		whereClause = " " + strings.TrimSpace(m[8])
+	}
+	orderClause := strings.TrimSpace(m[10])
+
+	subquery := fmt.Sprintf("(SELECT %s FROM %s %s WHERE %s)",
+		countExpr, joinedTable, jAlias, onCond)
+
+	result := fmt.Sprintf("%s, %s %s%s", cols, subquery, fromMain, whereClause)
+	if orderClause != "" {
+		result += " " + orderClause
+	}
+	return result
 }
 
 // replaceWord replaces whole-word occurrences of old with new in s.
