@@ -1,125 +1,72 @@
-# PG 引擎实现方案
+# PG 引擎
 
-## 1. 占位符
+## 占位符
 
 ```
-DSL:    @id → $1, @name → $2
-生成:   $1, $2, $3...
+@id → $1, @name → $2
 ```
 
-## 2. RETURNING
+## RETURNING
 
-PG 原生支持，直接渲染。
+仅支持 INSERT 单列 RETURNING。原生渲染，无转换。
 
-| DSL | 生成 |
-|-----|------|
-| `RETURNING id` | `RETURNING id` |
-| `RETURNING id, name` | `RETURNING id, name` |
-| `RETURNING *` | `RETURNING *` |
+```sql
+INSERT INTO users (name) VALUES ($1) RETURNING id
+```
 
-**执行方式**：`PrepareContext` → `QueryRowContext` → `rows.Scan`
+执行方式：`PrepareContext → QueryRowContext → Scan`
 
-## 3. ON CONFLICT
+## ON CONFLICT
 
-PG 原生支持。
+原生支持。
 
-| DSL | 生成 |
-|-----|------|
-| `ON CONFLICT (col) DO NOTHING` | 不变 |
-| `ON CONFLICT (col) DO UPDATE SET` | 不变 |
+```sql
+ON CONFLICT (col) DO NOTHING   →  不变
+ON CONFLICT (col) DO UPDATE SET →  不变
+```
 
-**执行方式**：`ExecContext`（无 RETURNING）或 `QueryRowContext`（有 RETURNING）
-
-## 4. LIMIT / OFFSET
+## LIMIT / OFFSET
 
 ```sql
 LIMIT @limit OFFSET @offset  →  LIMIT $1 OFFSET $2
 ```
 
-## 5. ILIKE
+## ILIKE
 
-PG 原生支持。
+PG 原生 ILIKE。预处理阶段将 ILIKE 替换为 LIKE 做 AST 解析，渲染时恢复为 ILIKE。
 
-```sql
-WHERE name ILIKE @pattern  →  WHERE name ILIKE $1
-```
-
-## 6. COALESCE
-
-```sql
-COALESCE(@status, status)  →  COALESCE($1, status)
-```
-
-## 7. NOW()
+## NOW / BOOLEAN
 
 ```sql
 NOW()  →  NOW()
+TRUE   →  TRUE
+FALSE  →  FALSE
 ```
 
-## 8. BOOLEAN
+## FROM dual
 
-```sql
-TRUE / FALSE  →  TRUE / FALSE
+vitess 对无 FROM 的 SELECT 会加上 `FROM dual`。PG 引擎渲染后自动移除。
+
+## Runner 实现
+
+```go
+type usersRunnerFactoryPG struct{}
+
+func (f *usersRunnerFactoryPG) newFindByID(db *sql.DB) findByIDRunner {
+    return &findByIDPG{db: db}
+}
+
+type findByIDPG struct {
+    stmt *sql.Stmt
+    db   *sql.DB
+}
+
+func (r *findByIDPG) query(ctx context.Context, id int64) (*sql.Row, error) {
+    if r.stmt == nil { r.stmt, _ = r.db.PrepareContext(ctx, findByIDConstPG) }
+    return r.stmt.QueryRowContext(ctx, id), nil
+}
 ```
 
-## 9. LIKE
-
-```sql
-WHERE name LIKE @pattern  →  WHERE name LIKE $1
-```
-
-## 10. CTE
-
-```sql
-WITH cte AS (...) SELECT ...  →  不变
-WITH RECURSIVE cte AS (...)  →  不变
-```
-
-## 11. 字符串拼接
-
-```sql
-name || ' - ' || code  →  name || ' - ' || code
-```
-
-## 12. 当前时间
-
-```sql
-NOW()  →  NOW()
-CURRENT_DATE  →  CURRENT_DATE
-```
-
-## 13. 数组
-
-```sql
-WHERE id = ANY(@ids)  →  WHERE id = ANY($1)
-```
-
-## 14. NULL 排序
-
-```sql
-ORDER BY c NULLS FIRST  →  不变
-ORDER BY c NULLS LAST   →  不变
-```
-
-## 15. 执行方式
-
-| 操作 | Go 实现 |
-|------|---------|
-| SELECT :one | `PrepareContext → QueryRowContext → Scan` |
-| SELECT :many | `PrepareContext → QueryContext → rows.Scan` |
-| INSERT :exec | `PrepareContext → ExecContext` |
-| INSERT :one (RETURNING) | `PrepareContext → QueryRowContext → Scan` |
-| UPDATE :exec | `PrepareContext → ExecContext` |
-| UPDATE :one (RETURNING) | `PrepareContext → QueryRowContext → Scan` |
-| DELETE :execrows | `PrepareContext → ExecContext → RowsAffected` |
-| DELETE :one (RETURNING) | `PrepareContext → QueryRowContext → Scan` |
-
-## 16. 生成文件
-
-```
-roles.sql.pg.go
-  - SQL 常量（PG 方言）
-  - queriesPG struct
-  - NewPG 构造器
-  - 方法体
-```
+- Runner 方法签名类型化，与 Querier 接口一致
+- `*sql.Stmt` lazy prepare，首次调用时初始化
+- `close()` 有 nil guard
