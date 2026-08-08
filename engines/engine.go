@@ -97,6 +97,9 @@ func (s RunnerSpec) ParamSignature() string {
 // PG and Oracle keep ", MySQL converts to backticks, MSSQL to brackets.
 func QuoteIdent(sql, dialect string) string {
 	switch dialect {
+	case "mysql":
+		re := regexp.MustCompile(`"([^"]*)"`)
+		return re.ReplaceAllString(sql, "`$1`")
 	case "mssql":
 		re := regexp.MustCompile(`"([^"]*)"`)
 		return re.ReplaceAllString(sql, "[$1]")
