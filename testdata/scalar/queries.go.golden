@@ -97,7 +97,9 @@ func (q *queriesQueries) FindUser(ctx context.Context, id int64) (*User, error) 
 	row, err := q.findUser.query(ctx, id)
 	if err != nil { return nil, err }
 	var r User
-	if err := row.Scan(&r.ID, &r.DisplayName); err != nil { return nil, err }
+	var _ns1 sql.NullString
+	if err := row.Scan(&r.ID, &_ns1); err != nil { return nil, err }
+	r.DisplayName = _ns1.String
 	return &r, nil
 }
 

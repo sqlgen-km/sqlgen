@@ -123,7 +123,13 @@ func (q *rolesQueries) FindByID(ctx context.Context, id int64) (*Role, error) {
 	row, err := q.findByID.query(ctx, id)
 	if err != nil { return nil, err }
 	var r Role
-	if err := row.Scan(&r.ID, &r.Name, &r.CreatedAt, &r.UpdatedAt); err != nil { return nil, err }
+	var _ns1 sql.NullString
+	var _ns2 sql.NullTime
+	var _ns3 sql.NullTime
+	if err := row.Scan(&r.ID, &_ns1, &_ns2, &_ns3); err != nil { return nil, err }
+	r.Name = _ns1.String
+	r.CreatedAt = _ns2.Time
+	r.UpdatedAt = _ns3.Time
 	return &r, nil
 }
 
@@ -134,7 +140,13 @@ func (q *rolesQueries) FindAll(ctx context.Context) ([]*Role, error) {
 	var items []*Role
 	for rows.Next() {
 		var r Role
-		if err := rows.Scan(&r.ID, &r.Name, &r.CreatedAt, &r.UpdatedAt); err != nil { return nil, err }
+		var _ns1 sql.NullString
+		var _ns2 sql.NullTime
+		var _ns3 sql.NullTime
+		if err := rows.Scan(&r.ID, &_ns1, &_ns2, &_ns3); err != nil { return nil, err }
+		r.Name = _ns1.String
+		r.CreatedAt = _ns2.Time
+		r.UpdatedAt = _ns3.Time
 		items = append(items, &r)
 	}
 	return items, rows.Err()

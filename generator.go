@@ -717,19 +717,23 @@ func (g *generator) writeReturnType(b *strings.Builder, qb queryBuilt) {
 func (g *generator) writeExplicitScan(b *strings.Builder, varName string, scanVia string, indent string, qb queryBuilt) {
 	scanTargets := g.buildScanTargets(qb)
 
-	// Check for discard targets and declare them
-	var discards []string
+	// Declare discard vars and nullable wrappers
+	nIdx := 0
 	for _, t := range scanTargets {
-		if strings.HasPrefix(t, "_d") {
-			discards = append(discards, t)
-		}
-	}
-	if len(discards) > 0 {
-		for _, d := range discards {
+		if strings.HasPrefix(t.Field, "_d") {
 			b.WriteString(indent)
 			b.WriteString("var ")
-			b.WriteString(d)
+			b.WriteString(t.Field)
 			b.WriteString(" interface{}\n")
+		} else if t.NullType != "" {
+			nIdx++
+			nullName := fmt.Sprintf("_ns%d", nIdx)
+			b.WriteString(indent)
+			b.WriteString("var ")
+			b.WriteString(nullName)
+			b.WriteString(" sql.Null")
+			b.WriteString(t.NullType)
+			b.WriteString("\n")
 		}
 	}
 
@@ -738,26 +742,54 @@ func (g *generator) writeExplicitScan(b *strings.Builder, varName string, scanVi
 	b.WriteString(scanVia)
 	b.WriteString(".Scan(")
 
+	nIdx = 0
 	for i, t := range scanTargets {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		if strings.HasPrefix(t, "_d") {
+		if strings.HasPrefix(t.Field, "_d") {
 			b.WriteString("&")
-			b.WriteString(t)
+			b.WriteString(t.Field)
+		} else if t.NullType != "" {
+			nIdx++
+			b.WriteString("&_ns")
+			b.WriteString(fmt.Sprint(nIdx))
 		} else {
 			b.WriteString("&")
 			b.WriteString(varName)
 			b.WriteString(".")
-			b.WriteString(t)
+			b.WriteString(t.Field)
 		}
 	}
 	b.WriteString("); err != nil { return nil, err }\n")
+
+	// Assign nullable wrappers back to model fields
+	nIdx = 0
+	for _, t := range scanTargets {
+		if t.NullType != "" {
+			nIdx++
+			nullName := fmt.Sprintf("_ns%d", nIdx)
+			b.WriteString(indent)
+			switch t.NullType {
+			case "String":
+				b.WriteString(fmt.Sprintf("%s.%s = %s.String\n", varName, t.Field, nullName))
+			case "Byte":
+				b.WriteString(fmt.Sprintf("%s.%s = []byte(%s.String)\n", varName, t.Field, nullName))
+			case "Time":
+				b.WriteString(fmt.Sprintf("%s.%s = %s.Time\n", varName, t.Field, nullName))
+			}
+		}
+	}
 }
 
-// buildScanTargets returns the list of model field names in SELECT column order
-// that should be used as scan targets.
-func (g *generator) buildScanTargets(qb queryBuilt) []string {
+// scanTargetInfo describes a single scan target — either a model field or a discard var.
+type scanTargetInfo struct {
+	Field    string // model field name, or _dN for discard
+	NullType string // "", "String", "Byte", "Time" for nullable non-pointer fields
+}
+
+// buildScanTargets returns scan targets in SELECT column order.
+func (g *generator) buildScanTargets(qb queryBuilt) []scanTargetInfo {
 	q := qb.q
 
 	// Build column→field mapping
@@ -769,10 +801,9 @@ func (g *generator) buildScanTargets(qb queryBuilt) []string {
 	// For RETURNING columns (from INSERT/UPDATE/DELETE RETURNING),
 	// use the model fields directly if FieldMaps are specified, otherwise fall through
 	if len(q.FieldMaps) > 0 && len(qb.columns) == 0 {
-		// Use FieldMaps directly
-		var targets []string
+		var targets []scanTargetInfo
 		for _, fm := range q.FieldMaps {
-			targets = append(targets, fm.Field)
+			targets = append(targets, g.makeTarget(fm.Field, q.Return))
 		}
 		return targets
 	}
@@ -809,13 +840,44 @@ func (g *generator) buildScanTargets(qb queryBuilt) []string {
 	}
 
 	// Generate scan targets in SELECT column order
-	var targets []string
+	var targets []scanTargetInfo
 	for _, col := range qb.columns {
 		if field, ok := colToField[col]; ok {
-			targets = append(targets, field)
+			targets = append(targets, g.makeTarget(field, q.Return))
 		}
 	}
 	return targets
+}
+
+// makeTarget creates a scanTargetInfo, detecting nullable types.
+func (g *generator) makeTarget(field, returnModel string) scanTargetInfo {
+	// Discard vars
+	if strings.HasPrefix(field, "_d") {
+		return scanTargetInfo{Field: field}
+	}
+	// Check model field type for nullable scan
+	if mdl, ok := g.models[returnModel]; ok {
+		for _, f := range mdl.Fields {
+			if f.Name == field {
+				nt := nullableScanType(f.Type)
+				return scanTargetInfo{Field: field, NullType: nt}
+			}
+		}
+	}
+	return scanTargetInfo{Field: field}
+}
+
+// nullableScanType returns the sql.Null* type name for non-pointer types that need nullable scanning.
+func nullableScanType(goType string) string {
+	switch goType {
+	case "string":
+		return "String"
+	case "[]byte":
+		return "Byte"
+	case "time.Time":
+		return "Time"
+	}
+	return ""
 }
 
 // -------------------- <name>.sql.<engine>.go (engine file) --------------------

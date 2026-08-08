@@ -238,7 +238,15 @@ func (q *itemsQueries) FindByID(ctx context.Context, id int64) (*Item, error) {
 	row, err := q.findByID.query(ctx, id)
 	if err != nil { return nil, err }
 	var r Item
-	if err := row.Scan(&r.ID, &r.Name, &r.Category, &r.Price, &r.Stock, &r.IsActive, &r.CreatedAt, &r.UpdatedAt); err != nil { return nil, err }
+	var _ns1 sql.NullString
+	var _ns2 sql.NullString
+	var _ns3 sql.NullTime
+	var _ns4 sql.NullTime
+	if err := row.Scan(&r.ID, &_ns1, &_ns2, &r.Price, &r.Stock, &r.IsActive, &_ns3, &_ns4); err != nil { return nil, err }
+	r.Name = _ns1.String
+	r.Category = _ns2.String
+	r.CreatedAt = _ns3.Time
+	r.UpdatedAt = _ns4.Time
 	return &r, nil
 }
 
@@ -249,7 +257,15 @@ func (q *itemsQueries) FindAll(ctx context.Context) ([]*Item, error) {
 	var items []*Item
 	for rows.Next() {
 		var r Item
-		if err := rows.Scan(&r.ID, &r.Name, &r.Category, &r.Price, &r.Stock, &r.IsActive, &r.CreatedAt, &r.UpdatedAt); err != nil { return nil, err }
+		var _ns1 sql.NullString
+		var _ns2 sql.NullString
+		var _ns3 sql.NullTime
+		var _ns4 sql.NullTime
+		if err := rows.Scan(&r.ID, &_ns1, &_ns2, &r.Price, &r.Stock, &r.IsActive, &_ns3, &_ns4); err != nil { return nil, err }
+		r.Name = _ns1.String
+		r.Category = _ns2.String
+		r.CreatedAt = _ns3.Time
+		r.UpdatedAt = _ns4.Time
 		items = append(items, &r)
 	}
 	return items, rows.Err()
@@ -262,7 +278,15 @@ func (q *itemsQueries) FindByCategory(ctx context.Context, category string) ([]*
 	var items []*Item
 	for rows.Next() {
 		var r Item
-		if err := rows.Scan(&r.ID, &r.Name, &r.Category, &r.Price, &r.Stock, &r.IsActive, &r.CreatedAt, &r.UpdatedAt); err != nil { return nil, err }
+		var _ns1 sql.NullString
+		var _ns2 sql.NullString
+		var _ns3 sql.NullTime
+		var _ns4 sql.NullTime
+		if err := rows.Scan(&r.ID, &_ns1, &_ns2, &r.Price, &r.Stock, &r.IsActive, &_ns3, &_ns4); err != nil { return nil, err }
+		r.Name = _ns1.String
+		r.Category = _ns2.String
+		r.CreatedAt = _ns3.Time
+		r.UpdatedAt = _ns4.Time
 		items = append(items, &r)
 	}
 	return items, rows.Err()
@@ -275,7 +299,15 @@ func (q *itemsQueries) ListPaged(ctx context.Context, page_limit int32, page_off
 	var items []*Item
 	for rows.Next() {
 		var r Item
-		if err := rows.Scan(&r.ID, &r.Name, &r.Category, &r.Price, &r.Stock, &r.IsActive, &r.CreatedAt, &r.UpdatedAt); err != nil { return nil, err }
+		var _ns1 sql.NullString
+		var _ns2 sql.NullString
+		var _ns3 sql.NullTime
+		var _ns4 sql.NullTime
+		if err := rows.Scan(&r.ID, &_ns1, &_ns2, &r.Price, &r.Stock, &r.IsActive, &_ns3, &_ns4); err != nil { return nil, err }
+		r.Name = _ns1.String
+		r.Category = _ns2.String
+		r.CreatedAt = _ns3.Time
+		r.UpdatedAt = _ns4.Time
 		items = append(items, &r)
 	}
 	return items, rows.Err()
@@ -329,7 +361,15 @@ func (q *itemsQueries) SearchByName(ctx context.Context, keyword string) ([]*Ite
 	var items []*Item
 	for rows.Next() {
 		var r Item
-		if err := rows.Scan(&r.ID, &r.Name, &r.Category, &r.Price, &r.Stock, &r.IsActive, &r.CreatedAt, &r.UpdatedAt); err != nil { return nil, err }
+		var _ns1 sql.NullString
+		var _ns2 sql.NullString
+		var _ns3 sql.NullTime
+		var _ns4 sql.NullTime
+		if err := rows.Scan(&r.ID, &_ns1, &_ns2, &r.Price, &r.Stock, &r.IsActive, &_ns3, &_ns4); err != nil { return nil, err }
+		r.Name = _ns1.String
+		r.Category = _ns2.String
+		r.CreatedAt = _ns3.Time
+		r.UpdatedAt = _ns4.Time
 		items = append(items, &r)
 	}
 	return items, rows.Err()
@@ -342,7 +382,15 @@ func (q *itemsQueries) SearchOptional(ctx context.Context, keyword *string) ([]*
 	var items []*Item
 	for rows.Next() {
 		var r Item
-		if err := rows.Scan(&r.ID, &r.Name, &r.Category, &r.Price, &r.Stock, &r.IsActive, &r.CreatedAt, &r.UpdatedAt); err != nil { return nil, err }
+		var _ns1 sql.NullString
+		var _ns2 sql.NullString
+		var _ns3 sql.NullTime
+		var _ns4 sql.NullTime
+		if err := rows.Scan(&r.ID, &_ns1, &_ns2, &r.Price, &r.Stock, &r.IsActive, &_ns3, &_ns4); err != nil { return nil, err }
+		r.Name = _ns1.String
+		r.Category = _ns2.String
+		r.CreatedAt = _ns3.Time
+		r.UpdatedAt = _ns4.Time
 		items = append(items, &r)
 	}
 	return items, rows.Err()
@@ -355,7 +403,9 @@ func (q *itemsQueries) CountByCategory(ctx context.Context) ([]*CatCount, error)
 	var items []*CatCount
 	for rows.Next() {
 		var r CatCount
-		if err := rows.Scan(&r.Category, &r.Cnt); err != nil { return nil, err }
+		var _ns1 sql.NullString
+		if err := rows.Scan(&_ns1, &r.Cnt); err != nil { return nil, err }
+		r.Category = _ns1.String
 		items = append(items, &r)
 	}
 	return items, rows.Err()
@@ -376,7 +426,15 @@ func (q *itemsQueries) FindByFilters(ctx context.Context, category *string, min_
 	var items []*Item
 	for rows.Next() {
 		var r Item
-		if err := rows.Scan(&r.ID, &r.Name, &r.Category, &r.Price, &r.Stock, &r.IsActive, &r.CreatedAt, &r.UpdatedAt); err != nil { return nil, err }
+		var _ns1 sql.NullString
+		var _ns2 sql.NullString
+		var _ns3 sql.NullTime
+		var _ns4 sql.NullTime
+		if err := rows.Scan(&r.ID, &_ns1, &_ns2, &r.Price, &r.Stock, &r.IsActive, &_ns3, &_ns4); err != nil { return nil, err }
+		r.Name = _ns1.String
+		r.Category = _ns2.String
+		r.CreatedAt = _ns3.Time
+		r.UpdatedAt = _ns4.Time
 		items = append(items, &r)
 	}
 	return items, rows.Err()
@@ -410,7 +468,11 @@ func (q *itemsQueries) ListBrief(ctx context.Context, category string) ([]*ItemB
 	var items []*ItemBrief
 	for rows.Next() {
 		var r ItemBrief
-		if err := rows.Scan(&r.ID, &r.Name, &r.Category); err != nil { return nil, err }
+		var _ns1 sql.NullString
+		var _ns2 sql.NullString
+		if err := rows.Scan(&r.ID, &_ns1, &_ns2); err != nil { return nil, err }
+		r.Name = _ns1.String
+		r.Category = _ns2.String
 		items = append(items, &r)
 	}
 	return items, rows.Err()
@@ -420,10 +482,14 @@ func (q *itemsQueries) FindWithExtra(ctx context.Context, id int64) (*ItemBrief,
 	row, err := q.findWithExtra.query(ctx, id)
 	if err != nil { return nil, err }
 	var r ItemBrief
+	var _ns1 sql.NullString
+	var _ns2 sql.NullString
 	var _d1 interface{}
 	var _d2 interface{}
 	var _d3 interface{}
-	if err := row.Scan(&r.ID, &r.Name, &r.Category, &_d1, &_d2, &_d3); err != nil { return nil, err }
+	if err := row.Scan(&r.ID, &_ns1, &_ns2, &_d1, &_d2, &_d3); err != nil { return nil, err }
+	r.Name = _ns1.String
+	r.Category = _ns2.String
 	return &r, nil
 }
 
