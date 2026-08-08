@@ -155,7 +155,13 @@ func (r *renderer) renderDelete(s *DeleteStmt) {
 // -------------------- Clauses --------------------
 
 func (r *renderer) renderTable(t TableRef) {
-	r.b.WriteString(t.Name)
+	if t.Quoted {
+		r.b.WriteByte('"')
+		r.b.WriteString(t.Name)
+		r.b.WriteByte('"')
+	} else {
+		r.b.WriteString(t.Name)
+	}
 	if t.Alias != "" {
 		r.b.WriteString(" ")
 		r.b.WriteString(t.Alias)
@@ -239,7 +245,13 @@ func (r *renderer) renderExprs(exprs []Expr) {
 func (r *renderer) renderExpr(e Expr) {
 	switch e.Kind {
 	case ExprCol:
-		r.b.WriteString(e.Col)
+		if e.Quoted {
+			r.b.WriteByte('"')
+			r.b.WriteString(e.Col)
+			r.b.WriteByte('"')
+		} else {
+			r.b.WriteString(e.Col)
+		}
 	case ExprLiteral:
 		if e.Val == nil {
 			r.b.WriteString("NULL")

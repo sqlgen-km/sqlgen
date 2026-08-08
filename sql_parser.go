@@ -141,6 +141,10 @@ func (p *sqlPrep) replaceParams(sql string) string {
 
 // parseSQLStmt parses SQL with vitess and maps to sqlgen AST.
 func parseSQLStmt(sql string) (ast.Statement, error) {
+	// vitess MySQL parser treats "identifier" as string literal.
+	// Convert to backtick-quoted identifiers that vitess accepts.
+	sql = convertDoubleQuotes(sql)
+
 	var parser sqlparser.Parser
 	stmt, err := parser.Parse(sql)
 	if err != nil {
@@ -296,7 +300,19 @@ func mapInsert(s *sqlparser.Insert) *ast.InsertStmt {
 
 	if s.Columns != nil {
 		for _, c := range s.Columns {
-			out.Columns = append(out.Columns, c.String())
+			col := unquoteMarker(c.String())
+			out.Columns = append(out.Columns, col)
+		}
+	}
+
+	// Also mark the table as quoted if needed
+	if !out.Table.Quoted {
+		if qt, ok := s.Table.Expr.(sqlparser.TableName); ok {
+			name := qt.Name.String()
+			if strings.HasPrefix(name, "qqq") && strings.HasSuffix(name, "qqq") && len(name) > 6 {
+				out.Table.Quoted = true
+				out.Table.Name = name[3 : len(name)-3]
+			}
 		}
 	}
 
@@ -420,10 +436,17 @@ func mapExpr(expr sqlparser.Expr) ast.Expr {
 
 func mapColName(c *sqlparser.ColName) ast.Expr {
 	col := c.Name.String()
+	quoted := false
+	if strings.HasPrefix(col, "qqq") && strings.HasSuffix(col, "qqq") && len(col) > 6 {
+		col = col[3:]
+		col = col[:len(col)-3]
+		quoted = true
+	}
 	if !c.Qualifier.IsEmpty() {
 		col = c.Qualifier.Name.String() + "." + col
+		quoted = false // qualified names are never quoted
 	}
-	return ast.Expr{Kind: ast.ExprCol, Col: col}
+	return ast.Expr{Kind: ast.ExprCol, Col: col, Quoted: quoted}
 }
 
 func mapLiteral(l *sqlparser.Literal) ast.Expr {
@@ -536,11 +559,33 @@ func mapTableName(te sqlparser.SimpleTableExpr) ast.TableRef {
 	switch t := te.(type) {
 	case sqlparser.TableName:
 		name := t.Name.String()
+		quoted := false
+		if strings.HasPrefix(name, "__sqlgen_q_") && strings.HasSuffix(name, "__") {
+			name = name[len("__sqlgen_q_"):]
+			name = name[:len(name)-2]
+			quoted = true
+		}
 		if !t.Qualifier.IsEmpty() {
 			name = t.Qualifier.String() + "." + name
+			quoted = false
 		}
-		return ast.TableRef{Name: name}
+		return ast.TableRef{Name: name, Quoted: quoted}
 	default:
 		return ast.TableRef{Name: sqlparser.String(te)}
 	}
+}
+
+
+// unquoteMarker strips the qqq...qqq marker and returns a double-quoted name.
+func unquoteMarker(s string) string {
+	if strings.HasPrefix(s, "qqq") && strings.HasSuffix(s, "qqq") && len(s) > 6 {
+		return `"` + s[3:len(s)-3] + `"`
+	}
+	return s
+}
+
+var dqRe = regexp.MustCompile(`"([^"]*)"`)
+
+func convertDoubleQuotes(sql string) string {
+	return dqRe.ReplaceAllString(sql, "qqq${1}qqq")
 }

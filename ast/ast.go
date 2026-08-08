@@ -66,8 +66,9 @@ func (*DeleteStmt) statementNode() {}
 
 // TableRef is a table reference, optionally aliased.
 type TableRef struct {
-	Name  string
-	Alias string
+	Name   string
+	Alias  string
+	Quoted bool
 }
 
 // JoinClause represents a JOIN clause.
@@ -169,8 +170,9 @@ type Expr struct {
 	Kind ExprKind
 
 	// Column reference
-	Col   string
-	Alias string // SELECT ... AS alias (empty if no alias)
+	Col    string
+	Alias  string // SELECT ... AS alias (empty if no alias)
+	Quoted bool   // true if the column/table was double-quoted in DSL
 
 	// Literal value (string, int, float, bool, nil for NULL)
 	Val any
