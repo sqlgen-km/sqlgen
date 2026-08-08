@@ -773,8 +773,6 @@ func (g *generator) writeExplicitScan(b *strings.Builder, varName string, scanVi
 			switch t.NullType {
 			case "String":
 				b.WriteString(fmt.Sprintf("%s.%s = %s.String\n", varName, t.Field, nullName))
-			case "Byte":
-				b.WriteString(fmt.Sprintf("%s.%s = []byte(%s.String)\n", varName, t.Field, nullName))
 			case "Time":
 				b.WriteString(fmt.Sprintf("%s.%s = %s.Time\n", varName, t.Field, nullName))
 			}
@@ -872,8 +870,6 @@ func nullableScanType(goType string) string {
 	switch goType {
 	case "string":
 		return "String"
-	case "[]byte":
-		return "Byte"
 	case "time.Time":
 		return "Time"
 	}
