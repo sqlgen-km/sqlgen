@@ -27,11 +27,10 @@ func (r *upsertProductOracle) exec(ctx context.Context, sku string, name string,
 func (r *upsertProductOracle) close() error { if r.stmt != nil { return r.stmt.Close() }; return nil }
 func (r *upsertProductOracle) withTx(tx *sql.Tx) upsertProductRunner { return &upsertProductOracle{stmt: tx.Stmt(r.stmt)} }
 
-const upsertProductRCConstOracle = `MERGE INTO products t
-USING (SELECT :1 AS sku, :2 AS name, :3 AS price, 1 AS stock FROM dual) s
-ON (t.sku = s.sku)
-WHEN NOT MATCHED THEN
-    INSERT (sku, name, price, stock) VALUES (s.sku, s.name, s.price, s.stock) RETURNING id INTO :out0`
+const upsertProductRCConstOracle = `BEGIN
+  INSERT INTO products (sku, name, price, stock) VALUES (:1, :2, :3, 1) RETURNING id INTO :out0;
+EXCEPTION WHEN DUP_VAL_ON_INDEX THEN NULL;
+END;`
 
 type upsertProductRCOracle struct {
 	stmt *sql.Stmt

@@ -102,6 +102,13 @@ func (g *Generator) renderSQL(spec engines.RunnerSpec) string {
 //	WHEN MATCHED THEN UPDATE SET name = s.name, price = s.price
 func (g *Generator) renderMerge(ins *ast.InsertStmt, spec engines.RunnerSpec) string {
 	oc := ins.OnConflict
+
+	// DO NOTHING: use PL/SQL block instead of MERGE (go-ora MERGE doesn't insert)
+	if !oc.DoUpdate {
+		return g.renderInsertIgnore(ins)
+	}
+
+	// DO UPDATE: use MERGE
 	tableAlias := "t"
 	sourceAlias := "s"
 
@@ -176,6 +183,50 @@ func (g *Generator) renderMerge(ins *ast.InsertStmt, spec engines.RunnerSpec) st
 		b.WriteString(strings.Join(outParts, ", "))
 	}
 
+	return b.String()
+}
+
+// renderInsertIgnore builds a PL/SQL block for INSERT with DO NOTHING on duplicate.
+// Since go-ora doesn't support MERGE properly for inserts, we use PL/SQL:
+//
+//	BEGIN
+//	  INSERT INTO tbl (col1, col2) VALUES (:1, :2);
+//	EXCEPTION WHEN DUP_VAL_ON_INDEX THEN NULL;
+//	END;
+func (g *Generator) renderInsertIgnore(ins *ast.InsertStmt) string {
+	var b strings.Builder
+	b.WriteString("BEGIN\n")
+	b.WriteString("  INSERT INTO ")
+	b.WriteString(ins.Table.Name)
+	b.WriteString(" (")
+	b.WriteString(strings.Join(ins.Columns, ", "))
+	b.WriteString(") VALUES (")
+	paramN := 0
+	for i := range ins.Columns {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		if i < len(ins.Values[0]) {
+			valStr := renderExprOra(ins.Values[0][i], &paramN)
+			b.WriteString(valStr)
+		}
+	}
+	// RETURNING clause
+	if len(ins.Returning) > 0 {
+		b.WriteString(") RETURNING ")
+		b.WriteString(strings.Join(ins.Returning, ", "))
+		b.WriteString(" INTO ")
+		var outParts []string
+		for i := range ins.Returning {
+			outParts = append(outParts, fmt.Sprintf(":out%d", i))
+		}
+		b.WriteString(strings.Join(outParts, ", "))
+	} else {
+		b.WriteString(")")
+	}
+	b.WriteString(";\n")
+	b.WriteString("EXCEPTION WHEN DUP_VAL_ON_INDEX THEN NULL;\n")
+	b.WriteString("END;")
 	return b.String()
 }
 
