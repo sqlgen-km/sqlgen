@@ -74,9 +74,11 @@ func (g *Generator) renderSQL(spec engines.RunnerSpec) string {
 	// NOW() → SYSDATE
 	sql = strings.ReplaceAll(sql, "now()", "SYSDATE")
 
-	// TRUE/FALSE → 1/0 (Oracle doesn't have boolean literals)
+	// TRUE/FALSE → 1/0 (Oracle doesn't have boolean literals, handle both cases)
 	sql = replaceWord(sql, "TRUE", "1")
 	sql = replaceWord(sql, "FALSE", "0")
+	sql = replaceWord(sql, "true", "1")
+	sql = replaceWord(sql, "false", "0")
 
 	// RETURNING → RETURNING ... INTO :outN (Oracle requires INTO clause)
 	sql = g.transformReturning(sql, spec.Stmt)
@@ -336,7 +338,11 @@ func rewriteGroupByToSubquery(sql string) string {
 	onCond := strings.TrimSpace(m[7])
 	whereClause := ""
 	if m[8] != "" {
-		whereClause = " " + strings.TrimSpace(m[8])
+		whereBody := strings.TrimSpace(m[8])
+		whereBody = strings.TrimPrefix(whereBody, "WHERE")
+		whereBody = strings.TrimSpace(whereBody)
+		whereBody = rewriteJoinRefsInWhere(whereBody, jAlias, joinedTable, onCond)
+		whereClause = " WHERE " + whereBody
 	}
 	orderClause := strings.TrimSpace(m[10])
 
@@ -348,6 +354,22 @@ func rewriteGroupByToSubquery(sql string) string {
 		result += " " + orderClause
 	}
 	return result
+}
+
+// rewriteJoinRefsInWhere replaces references to a LEFT JOIN table alias in a
+// WHERE clause body with EXISTS subqueries. Each occurrence of
+//   jAlias.col op value
+// becomes
+//   EXISTS (SELECT 1 FROM joinedTable jAlias WHERE onCond AND jAlias.col op value)
+func rewriteJoinRefsInWhere(whereBody, jAlias, joinedTable, onCond string) string {
+	// Match: jAlias.col comp_op value   or   jAlias.col IS [NOT] NULL
+	re := regexp.MustCompile(
+		`\b` + regexp.QuoteMeta(jAlias) + `\.(\w+)\s*(IS\s+(?:NOT\s+)?NULL|(?:=|!=|<>|>=?|<=?|LIKE|ILIKE)\s+(?::\w+|'[^']*'|\d+(?:\.\d+)?|NULL))\b`,
+	)
+	return re.ReplaceAllStringFunc(whereBody, func(match string) string {
+		return fmt.Sprintf("EXISTS (SELECT 1 FROM %s %s WHERE %s AND %s)",
+			joinedTable, jAlias, onCond, match)
+	})
 }
 
 // replaceWord replaces whole-word occurrences of old with new in s.
