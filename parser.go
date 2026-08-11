@@ -4,48 +4,18 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/sqlgen-km/sqlgen/meta"
 )
 
-// -------------------- Data Model --------------------
+// ── Type aliases for backward compatibility (definitions in meta/) ──
 
-// ParsedFile is a fully parsed .sql file.
-type ParsedFile struct {
-	Package string
-	Models  []ModelDef
-	Queries []QueryDef
-}
-
-// ModelDef is a model struct declaration.
-type ModelDef struct {
-	Name   string
-	Fields []FieldDef
-}
-
-// FieldDef is a single field in a model.
-type FieldDef struct {
-	Name string
-	Type string
-}
-
-// QueryDef is a single query method definition.
-type QueryDef struct {
-	Name      string // Go method name
-	Mode      string // "one", "many", "exec"
-	Params    []ParamDef
-	Return    string     // return type
-	IsScalar  bool       // true for -- model int64 shorthand
-	FieldMaps []FieldMap // field→column mapping for return type
-	Doc       []string   // -- @ doc comment lines
-	SQL       string
-	Src       string
-	Line      int
-}
-
-// ParamDef is a single input parameter.
-type ParamDef struct {
-	Name string
-	Type string
-}
+type ParsedFile = meta.ParsedFile
+type ModelDef = meta.ModelDef
+type FieldDef = meta.FieldDef
+type QueryDef = meta.QueryDef
+type ParamDef = meta.ParamDef
+type FieldMap = meta.FieldMapDef
 
 // inlineModel is a model declared inline in a query scope (may be unnamed).
 type inlineModel struct {
@@ -55,13 +25,7 @@ type inlineModel struct {
 	Scalar    bool       // true for -- model int64 shorthand
 }
 
-// FieldMap is a model-field → SQL-column mapping pair.
-type FieldMap struct {
-	Field  string // model field name (PascalCase)
-	Column string // SQL column name
-}
-
-// -------------------- Parser --------------------
+// ── Parser ──
 
 func parseFile(path string, src []byte) (*ParsedFile, error) {
 	p := &fileParser{
@@ -289,14 +253,14 @@ func parseFieldMaps(s string) ([]FieldMap, error) {
 		if len(kv) == 1 {
 			// "id" → default PascalCase
 			col := strings.TrimSpace(kv[0])
-			maps = append(maps, FieldMap{Field: toPascal(col), Column: col})
+			maps = append(maps, FieldMap{Field: meta.ToPascal(col), Column: col})
 		} else {
 			// "owner_name:Count" → 左=SQL列, 右=Go字段(PascalCase expected)
 			col := strings.TrimSpace(kv[0])
 			field := strings.TrimSpace(kv[1])
 			// Accept both "count" and "Count" — always PascalCase
 			if field == strings.ToLower(field) {
-				field = toPascal(field)
+				field = meta.ToPascal(field)
 			}
 			maps = append(maps, FieldMap{Field: field, Column: col})
 		}
@@ -320,7 +284,7 @@ func parseFields(s string) ([]FieldDef, error) {
 			return nil, fmt.Errorf("invalid field %q: expected 'name Type'", part)
 		}
 		fields = append(fields, FieldDef{
-			Name: toPascal(tokens[0]),
+			Name: meta.ToPascal(tokens[0]),
 			Type: tokens[1],
 		})
 	}
@@ -569,21 +533,6 @@ func splitComma(s string) []string {
 	return parts
 }
 
-func toPascal(s string) string {
-	parts := strings.Split(s, "_")
-	for i, p := range parts {
-		if len(p) == 0 {
-			continue
-		}
-		if strings.EqualFold(p, "id") {
-			parts[i] = "ID"
-		} else {
-			parts[i] = strings.ToUpper(p[:1]) + p[1:]
-		}
-	}
-	return strings.Join(parts, "")
-}
-
 func toCamel(s string) string {
 	s = strings.ReplaceAll(s, "-", "_")
 	parts := strings.Split(s, "_")
@@ -598,7 +547,7 @@ func toCamel(s string) string {
 }
 
 func toPascalFromPath(name string) string {
-	return toPascal(strings.ReplaceAll(name, "-", "_"))
+	return meta.ToPascal(strings.ReplaceAll(name, "-", "_"))
 }
 
 var _ = strconv.Itoa

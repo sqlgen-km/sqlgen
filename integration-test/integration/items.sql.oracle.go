@@ -179,11 +179,10 @@ func (r *upsertItemOracle) exec(ctx context.Context, name string, category strin
 func (r *upsertItemOracle) close() error { if r.stmt != nil { return r.stmt.Close() }; return nil }
 func (r *upsertItemOracle) withTx(tx *sql.Tx) upsertItemRunner { return &upsertItemOracle{stmt: tx.Stmt(r.stmt)} }
 
-const upsertIgnoreConstOracle = `MERGE INTO items t
-USING (SELECT :1 AS name, :2 AS category, 0 AS price, 0 AS stock FROM dual) s
-ON (t.name = s.name)
-WHEN NOT MATCHED THEN
-    INSERT (name, category, price, stock) VALUES (s.name, s.category, s.price, s.stock)`
+const upsertIgnoreConstOracle = `BEGIN
+  INSERT INTO items (name, category, price, stock) VALUES (:1, :2, 0, 0);
+EXCEPTION WHEN DUP_VAL_ON_INDEX THEN NULL;
+END;`
 
 type upsertIgnoreOracle struct {
 	stmt *sql.Stmt

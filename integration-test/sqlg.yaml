@@ -1,11 +1,21 @@
-tags:
-  - json
 engines:
   - pg
   - oracle
   - mysql
   - mssql
-packages:
-  - path: .
-    files:
-      - items.sql
+
+go:
+  tags:
+    - json
+  packages:
+    - out: .
+      files:
+        - items.sql
+
+java:
+  packages:
+    - modelPackage: "com.example.entity"
+      mapperPackage: "com.example.mapper"
+      out: src/gen/java
+      files:
+        - items.sql

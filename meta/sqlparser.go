@@ -1,4 +1,4 @@
-package main
+package meta
 
 import (
 	"fmt"
@@ -9,138 +9,8 @@ import (
 	"vitess.io/vitess/go/vt/sqlparser"
 )
 
-// -------------------- SQL Preprocessing --------------------
-
-// sqlPrep holds the result of SQL preprocessing.
-type sqlPrep struct {
-	cleanedSQL string     // SQL with @param replaced by :vN placeholders
-	params     []paramRef // ordered param references
-	returning  []string   // extracted RETURNING columns
-	hasStar    bool       // RETURNING * was found
-	hasILIKE   bool       // original DSL used ILIKE (replaced with LIKE for vitess)
-	onConflict *onConflictInfo
-}
-
-type onConflictInfo struct {
-	Columns   []string
-	DoUpdate  bool
-	Sets      []setClauseInfo
-}
-
-type setClauseInfo struct {
-	Col string
-	Val string
-}
-
-// paramRef records how a DSL @reference maps to function args.
-type paramRef struct {
-	Full    string // e.g. "filter.gender" or "id"
-	Field   string // field name in AST: "gender" or "id"
-	Param   string // function param name: "filter" or "id"
-	IsField bool   // true if this is param.field access
-}
-
-// preprocessSQL extracts RETURNING and replaces @param references.
-func preprocessSQL(rawSQL string) *sqlPrep {
-	p := &sqlPrep{}
-	sql := strings.TrimSpace(rawSQL)
-	sql = p.extractReturning(sql)
-	sql = p.extractOnConflict(sql)
-	sql = p.replaceILIKE(sql)
-	sql = p.replaceParams(sql)
-	p.cleanedSQL = sql
-	return p
-}
-
-var returningRe = regexp.MustCompile(`(?i)\s+RETURNING\s+(\*|(?:\w+\s*,\s*)*\w+)\s*$`)
-
-func (p *sqlPrep) extractReturning(sql string) string {
-	m := returningRe.FindStringSubmatch(sql)
-	if m == nil {
-		return sql
-	}
-	cols := m[1]
-	if cols == "*" {
-		p.hasStar = true
-	} else {
-		for _, part := range strings.Split(cols, ",") {
-			p.returning = append(p.returning, strings.TrimSpace(part))
-		}
-	}
-	return returningRe.ReplaceAllString(sql, "")
-}
-
-var onConflictRe = regexp.MustCompile(`(?si)\s+ON\s+CONFLICT\s+\(([^)]+)\)\s+DO\s+(NOTHING|UPDATE\s+SET\s+(.+?))(?:\s+RETURNING\s+.+)?$`)
-
-func (p *sqlPrep) extractOnConflict(sql string) string {
-	m := onConflictRe.FindStringSubmatch(sql)
-	if m == nil {
-		return sql
-	}
-	info := &onConflictInfo{}
-	for _, c := range strings.Split(m[1], ",") {
-		info.Columns = append(info.Columns, strings.TrimSpace(c))
-	}
-	if m[2] == "NOTHING" {
-		info.DoUpdate = false
-	} else {
-		info.DoUpdate = true
-		// parse SET clauses: "col = val, col2 = val2"
-		setsStr := strings.TrimSpace(m[3])
-		for _, set := range strings.Split(setsStr, ",") {
-			parts := strings.SplitN(strings.TrimSpace(set), "=", 2)
-			if len(parts) == 2 {
-				info.Sets = append(info.Sets, setClauseInfo{
-					Col: strings.TrimSpace(parts[0]),
-					Val: strings.TrimSpace(parts[1]),
-				})
-			}
-		}
-	}
-	p.onConflict = info
-	return onConflictRe.ReplaceAllString(sql, "")
-}
-
-var paramRe = regexp.MustCompile(`@(\w+(?:\.\w+)?)`)
-
-var ilikeRe = regexp.MustCompile(`(?i)\s+ILIKE\s+`)
-
-// replaceILIKE replaces ILIKE with LIKE for vitess compatibility.
-// The PG engine will restore ILIKE when rendering SQL.
-func (p *sqlPrep) replaceILIKE(sql string) string {
-	result := ilikeRe.ReplaceAllString(sql, " LIKE ")
-	if result != sql {
-		p.hasILIKE = true
-	}
-	return result
-}
-func (p *sqlPrep) replaceParams(sql string) string {
-	var params []paramRef
-
-	result := paramRe.ReplaceAllStringFunc(sql, func(match string) string {
-		name := match[1:] // strip @
-
-		ref := paramRef{Full: name}
-		if dotIdx := strings.IndexByte(name, '.'); dotIdx >= 0 {
-			ref.Param = name[:dotIdx]
-			ref.Field = name[dotIdx+1:]
-			ref.IsField = true
-		} else {
-			ref.Param = name
-			ref.Field = name
-		}
-		params = append(params, ref)
-		return "?"
-	})
-
-	p.params = params
-	return result
-}
-
-// -------------------- Vitess AST Mapping --------------------
-
-// parseSQLStmt parses SQL with vitess and maps to sqlgen AST.
-func parseSQLStmt(sql string) (ast.Statement, error) {
+// ParseSQLStmt parses SQL with vitess and maps to sqlgen AST.
+func ParseSQLStmt(sql string) (ast.Statement, error) {
 	// vitess MySQL parser treats "identifier" as string literal.
 	// Convert to backtick-quoted identifiers that vitess accepts.
 	sql = convertDoubleQuotes(sql)
@@ -415,7 +285,7 @@ func mapExpr(expr sqlparser.Expr) ast.Expr {
 	case *sqlparser.NullVal:
 		return ast.Expr{Kind: ast.ExprLiteral, Val: nil}
 	case *sqlparser.Argument:
-		// ? placeholder → named parameter, index tracked by prep.params order
+		// ? placeholder → named parameter, index tracked by prep.Params order
 		return ast.Expr{Kind: ast.ExprParam, Param: "_"}
 	case sqlparser.ListArg:
 		return ast.Expr{Kind: ast.ExprParam, Param: "_"}
@@ -574,7 +444,6 @@ func mapTableName(te sqlparser.SimpleTableExpr) ast.TableRef {
 		return ast.TableRef{Name: sqlparser.String(te)}
 	}
 }
-
 
 // unquoteMarker strips the qqq...qqq marker and returns a double-quoted name.
 func unquoteMarker(s string) string {

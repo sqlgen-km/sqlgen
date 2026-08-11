@@ -64,13 +64,14 @@ type RunnerParam struct {
 
 // RunnerSpec 单个操作的运行器定义（生成到共享代码）
 type RunnerSpec struct {
-	Name     string           // 运行器字段名（小写导出）
-	Kind     RunnerKind       // 运行器类型
-	Query    string           // 对应方法名
-	IsScalar bool
-	HasILIKE bool             // DSL used ILIKE
-	Params   []RunnerParam    // 方法签名参数（类型化）
-	Stmt     ast.Statement // AST 语句（引擎据此渲染 SQL 和决定执行策略）
+	Name      string           // 运行器字段名（小写导出）
+	Kind      RunnerKind       // 运行器类型
+	Query     string           // 对应方法名
+	IsScalar  bool
+	HasILIKE  bool             // DSL used ILIKE
+	ModelType string           // return model type name (e.g. "Item", "int64", "string")
+	Params    []RunnerParam    // 方法签名参数（类型化）
+	Stmt      ast.Statement // AST 语句（引擎据此渲染 SQL 和决定执行策略）
 }
 
 // Engine 引擎接口

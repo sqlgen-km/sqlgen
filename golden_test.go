@@ -4,11 +4,15 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/sqlgen-km/sqlgen/engines"
+	"github.com/sqlgen-km/sqlgen/languages/golang"
+	"github.com/sqlgen-km/sqlgen/languages/java"
 )
 
 func TestGolden(t *testing.T) {
 	writeMode := os.Getenv("WRITE_GOLDEN") == "1"
-	
+
 	tests := []struct {
 		name      string
 		subdir    string
@@ -82,14 +86,25 @@ func TestGolden(t *testing.T) {
 				}
 			}
 
-			g := &generator{
-				pkgPath: tmpDir,
-				pkgName: pkgName,
-				tags:    []string{"json"},
-				engines: tt.engines,
-				files:   parsedFiles,
+			// Resolve Go engines for golden test
+			goEngineMap := make(map[string]engines.Engine, len(tt.engines))
+			for _, name := range tt.engines {
+				eng, err := getEngine(name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				goEngineMap[name] = eng
 			}
-			if err := g.generate(); err != nil {
+
+			g := &golang.Generator{
+				PkgPath:     tmpDir,
+				PkgName:     pkgName,
+				Tags:        []string{"json"},
+				EngineNames: tt.engines,
+				EngineMap:   goEngineMap,
+				Files:       parsedFiles,
+			}
+			if err := g.Generate(); err != nil {
 				t.Fatal(err)
 			}
 
@@ -153,13 +168,13 @@ func testErrorCase(t *testing.T, files []string, subdir string) {
 
 	// Try generating — should fail
 	tmpDir := t.TempDir()
-	g := &generator{
-		pkgPath: tmpDir,
-		pkgName: parsedFiles[0].Package,
-		tags:    []string{"json"},
-		files:   parsedFiles,
+	g := &golang.Generator{
+		PkgPath: tmpDir,
+		PkgName: parsedFiles[0].Package,
+		Tags:    []string{"json"},
+		Files:   parsedFiles,
 	}
-	if err := g.generate(); err == nil {
+	if err := g.Generate(); err == nil {
 		t.Errorf("%s: expected generation error, got nil", files[0])
 	}
 }
@@ -171,4 +186,127 @@ func readFile(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(data)
+}
+
+func TestJavaGolden(t *testing.T) {
+	writeMode := os.Getenv("WRITE_GOLDEN") == "1"
+
+	tests := []struct {
+		name    string
+		subdir  string
+		engines []string
+	}{
+		{name: "java/basic", subdir: "java/basic", engines: []string{"pg"}},
+		{name: "java/conflict", subdir: "java/conflict", engines: []string{"pg", "mysql"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sqlFiles, _ := filepath.Glob(filepath.Join("testdata", tt.subdir, "*.sql"))
+			if len(sqlFiles) == 0 {
+				t.Skip("no .sql files found in " + tt.subdir)
+			}
+
+			// Parse DSL
+			var parsedFiles []*ParsedFile
+			for _, f := range sqlFiles {
+				src, err := os.ReadFile(f)
+				if err != nil {
+					t.Fatal(err)
+				}
+				pf, err := parseFile(f, src)
+				if err != nil {
+					t.Fatal(err)
+				}
+				parsedFiles = append(parsedFiles, pf)
+			}
+
+			// Generate Java files
+			tmpDir := t.TempDir()
+			pkg := JavaPkgCfg{
+				ModelPackage:  "com.example.entity",
+				MapperPackage: "com.example.mapper",
+				Out:           tmpDir,
+				Files:         sqlFiles,
+			}
+
+			// Resolve Java engines
+			javaEngs := make([]java.Engine, 0, len(tt.engines))
+			for _, name := range tt.engines {
+				eng, err := getJavaEngine(name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				javaEngs = append(javaEngs, eng)
+			}
+
+			for _, pf := range parsedFiles {
+				if err := java.Generate(pf, pkg, javaEngs); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			// Walk output directory to find all .java files
+			goldenDir := filepath.Join("testdata", tt.subdir)
+			var generated []string
+			filepath.Walk(tmpDir, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if info.IsDir() {
+					return nil
+				}
+				if filepath.Ext(path) == ".java" {
+					rel, _ := filepath.Rel(tmpDir, path)
+					generated = append(generated, rel)
+				}
+				return nil
+			})
+
+			if writeMode {
+				// Remove old golden files
+				oldFiles, _ := filepath.Glob(filepath.Join(goldenDir, "*.golden"))
+				for _, of := range oldFiles {
+					os.Remove(of)
+				}
+				// Write new golden files
+				for _, rel := range generated {
+					goldenName := filepath.Base(rel) + ".golden"
+					content, _ := os.ReadFile(filepath.Join(tmpDir, rel))
+					destPath := filepath.Join(goldenDir, goldenName)
+					os.MkdirAll(filepath.Dir(destPath), 0755)
+					os.WriteFile(destPath, content, 0644)
+					t.Logf("Wrote %s", goldenName)
+				}
+				return
+			}
+
+			// Compare against golden files — match generated files by base name
+			goldens, _ := filepath.Glob(filepath.Join(goldenDir, "*.golden"))
+			if len(goldens) == 0 {
+				t.Fatal("no golden files found (run with WRITE_GOLDEN=1 to generate)")
+			}
+			for _, gf := range goldens {
+				baseFile := filepath.Base(gf)
+				baseFile = baseFile[:len(baseFile)-len(".golden")]
+				// Find the generated file with matching base name
+				var genPath string
+				for _, rel := range generated {
+					if filepath.Base(rel) == baseFile {
+						genPath = rel
+						break
+					}
+				}
+				if genPath == "" {
+					t.Errorf("golden file %s has no matching generated file", baseFile)
+					continue
+				}
+				got := readFile(t, filepath.Join(tmpDir, genPath))
+				want := readFile(t, gf)
+				if got != want {
+					t.Errorf("%s mismatch", baseFile)
+				}
+			}
+		})
+	}
 }

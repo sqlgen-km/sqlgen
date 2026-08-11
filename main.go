@@ -5,6 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/sqlgen-km/sqlgen/engines"
+	"github.com/sqlgen-km/sqlgen/languages/golang"
+	"github.com/sqlgen-km/sqlgen/languages/java"
 )
 
 func main() {
@@ -15,82 +19,126 @@ func main() {
 	}
 
 	engineNames := cfg.Engines
-	if len(engineNames) == 0 {
-		engineNames = []string{"pg"}
-	}
 
-	for _, pkg := range cfg.Packages {
-		files, err := resolveFiles(pkg.Files)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "sqlgen: %v\n", err)
-			os.Exit(1)
+	// ── Go language ──
+	if cfg.Go != nil {
+		// Resolve Go engines once
+		goEngineMap := make(map[string]engines.Engine, len(engineNames))
+		for _, name := range engineNames {
+			eng, err := getEngine(name)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "sqlgen: Go engine %q: %v\n", name, err)
+				os.Exit(1)
+			}
+			goEngineMap[name] = eng
 		}
 
-		tags := tagList(cfg.Tags, pkg.Tags)
-
-		// Group files by DSL package name
-		pkgs := map[string]*pkgFiles{}
-		for _, path := range files {
-			src, err := os.ReadFile(path)
+		for _, pkg := range cfg.Go.Packages {
+			files, err := resolveFiles(pkg.Files)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "sqlgen: %v\n", err)
 				os.Exit(1)
 			}
 
-			pf, err := parseFile(path, src)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "sqlgen: %v\n", err)
-				os.Exit(1)
+			tags := tagList(cfg.Go.Tags, pkg.Tags)
+
+			pkgs := map[string]*pkgFiles{}
+			for _, path := range files {
+				src, err := os.ReadFile(path)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "sqlgen: %v\n", err)
+					os.Exit(1)
+				}
+				pf, err := parseFile(path, src)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "sqlgen: %v\n", err)
+					os.Exit(1)
+				}
+				pkgName := pf.Package
+				if _, ok := pkgs[pkgName]; !ok {
+					pkgs[pkgName] = &pkgFiles{}
+				}
+				pkgs[pkgName].files = append(pkgs[pkgName].files, pf)
 			}
 
-			pkgName := pf.Package
-			if _, ok := pkgs[pkgName]; !ok {
-				pkgs[pkgName] = &pkgFiles{}
+			outBase := pkg.Out
+			if outBase == "" {
+				outBase = "."
 			}
-			pkgs[pkgName].files = append(pkgs[pkgName].files, pf)
-		}
 
-		// Output base dir
-		outBase := pkg.Path
-		if outBase == "" {
-			outBase = "."
-		}
-
-		// Generate each package
-		for pkgName, pf := range pkgs {
-			// Check for duplicate models
-			models := map[string]bool{}
-			for _, f := range pf.files {
-				for _, m := range f.Models {
-					if models[m.Name] {
-						fmt.Fprintf(os.Stderr, "sqlgen: package %q: duplicate model %q\n", pkgName, m.Name)
-						os.Exit(1)
+			for pkgName, pf := range pkgs {
+				models := map[string]bool{}
+				for _, f := range pf.files {
+					for _, m := range f.Models {
+						if models[m.Name] {
+							fmt.Fprintf(os.Stderr, "sqlgen: package %q: duplicate model %q\n", pkgName, m.Name)
+							os.Exit(1)
+						}
+						models[m.Name] = true
 					}
-					models[m.Name] = true
+				}
+
+				pkgDir := filepath.Join(outBase, pkgName)
+				if err := os.MkdirAll(pkgDir, 0755); err != nil {
+					fmt.Fprintf(os.Stderr, "sqlgen: %v\n", err)
+					os.Exit(1)
+				}
+
+				g := &golang.Generator{
+					PkgPath:     pkgDir,
+					PkgName:     pkgName,
+					Tags:        tags,
+					EngineNames: engineNames,
+					EngineMap:   goEngineMap,
+					Files:       pf.files,
+				}
+				if err := g.Generate(); err != nil {
+					fmt.Fprintf(os.Stderr, "sqlgen: %v\n", err)
+					os.Exit(1)
 				}
 			}
-
-			pkgDir := filepath.Join(outBase, pkgName)
-			if err := os.MkdirAll(pkgDir, 0755); err != nil {
-				fmt.Fprintf(os.Stderr, "sqlgen: %v\n", err)
-				os.Exit(1)
-			}
-
-			g := &generator{
-				pkgPath:  pkgDir,
-				pkgName:  pkgName,
-				tags:     tags,
-				engines:  engineNames,
-				files:    pf.files,
-			}
-			if err := g.generate(); err != nil {
-				fmt.Fprintf(os.Stderr, "sqlgen: %v\n", err)
-				os.Exit(1)
-			}
 		}
+		fmt.Println("sqlgen: go done")
 	}
 
-	fmt.Println("sqlgen: done")
+	// ── Java language ──
+	if cfg.Java != nil {
+		javaEngines := make([]java.Engine, 0, len(engineNames))
+		for _, name := range engineNames {
+			eng, err := getJavaEngine(name)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "sqlgen: Java engine %q: %v\n", name, err)
+				os.Exit(1)
+			}
+			javaEngines = append(javaEngines, eng)
+		}
+
+		for _, pkg := range cfg.Java.Packages {
+			files, err := resolveFiles(pkg.Files)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "sqlgen: %v\n", err)
+				os.Exit(1)
+			}
+
+			for _, path := range files {
+				src, err := os.ReadFile(path)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "sqlgen: %v\n", err)
+					os.Exit(1)
+				}
+				pf, err := parseFile(path, src)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "sqlgen: %v\n", err)
+					os.Exit(1)
+				}
+				if err := java.Generate(pf, pkg, javaEngines); err != nil {
+					fmt.Fprintf(os.Stderr, "sqlgen: %v\n", err)
+					os.Exit(1)
+				}
+			}
+		}
+		fmt.Println("sqlgen: java done")
+	}
 }
 
 type pkgFiles struct {

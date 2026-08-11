@@ -7,21 +7,36 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+	"github.com/sqlgen-km/sqlgen/meta"
 )
 
 // Config is the sqlg.yaml configuration.
 type Config struct {
-	Tags     []string `yaml:"tags"`
-	Engines  []string `yaml:"engines"` // defaults to ["pg"]
-	Packages []PkgCfg `yaml:"packages"`
+	Engines []string `yaml:"engines"` // defaults to ["pg"]
+	Go      *GoCfg   `yaml:"go"`
+	Java    *JavaCfg `yaml:"java"`
 }
 
-// PkgCfg is a single package configuration.
-type PkgCfg struct {
-	Path  string   `yaml:"path"`  // output directory (default ".")
+// GoCfg is the Go language configuration block.
+type GoCfg struct {
+	Tags     []string   `yaml:"tags"`
+	Packages []GoPkgCfg `yaml:"packages"`
+}
+
+// GoPkgCfg is a single Go package configuration.
+type GoPkgCfg struct {
+	Out   string   `yaml:"out"`   // output directory
 	Tags  []string `yaml:"tags"`  // per-package tag override
 	Files []string `yaml:"files"` // glob patterns for .sql files
 }
+
+// JavaCfg is the Java language configuration block.
+type JavaCfg struct {
+	Packages []meta.JavaPkgCfg `yaml:"packages"`
+}
+
+// JavaPkgCfg is an alias for meta.JavaPkgCfg.
+type JavaPkgCfg = meta.JavaPkgCfg
 
 // loadConfig reads sqlg.yaml from dir.
 func loadConfig(dir string) (*Config, error) {
@@ -33,13 +48,22 @@ func loadConfig(dir string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse sqlg.yaml: %w", err)
 	}
-	if len(cfg.Packages) == 0 {
-		return nil, fmt.Errorf("sqlg.yaml: at least one package required")
+	if len(cfg.Engines) == 0 {
+		cfg.Engines = []string{"pg"}
+	}
+	if cfg.Go == nil && cfg.Java == nil {
+		return nil, fmt.Errorf("sqlg.yaml: at least one of 'go' or 'java' must be configured")
+	}
+	if cfg.Go != nil && len(cfg.Go.Packages) == 0 {
+		return nil, fmt.Errorf("sqlg.yaml: go.packages must have at least one entry")
+	}
+	if cfg.Java != nil && len(cfg.Java.Packages) == 0 {
+		return nil, fmt.Errorf("sqlg.yaml: java.packages must have at least one entry")
 	}
 	return &cfg, nil
 }
 
-// resolveFiles expands glob patterns in a package config.
+// resolveFiles expands glob patterns.
 func resolveFiles(files []string) ([]string, error) {
 	var out []string
 	for _, pattern := range files {
@@ -63,14 +87,4 @@ func tagList(global, local []string) []string {
 	return global
 }
 
-// splitTags parses "json,yaml" → ["json","yaml"]
-func splitTags(s string) []string {
-	var out []string
-	for _, t := range strings.Split(s, ",") {
-		t = strings.TrimSpace(t)
-		if t != "" {
-			out = append(out, t)
-		}
-	}
-	return out
-}
+var _ = strings.TrimSpace

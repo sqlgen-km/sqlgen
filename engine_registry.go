@@ -4,10 +4,10 @@ import (
 	"fmt"
 
 	"github.com/sqlgen-km/sqlgen/engines"
-	"github.com/sqlgen-km/sqlgen/engines/mssql"
-	"github.com/sqlgen-km/sqlgen/engines/mysql"
-	"github.com/sqlgen-km/sqlgen/engines/oracle"
-	"github.com/sqlgen-km/sqlgen/engines/pg"
+	"github.com/sqlgen-km/sqlgen/languages/golang/mssql"
+	"github.com/sqlgen-km/sqlgen/languages/golang/mysql"
+	"github.com/sqlgen-km/sqlgen/languages/golang/oracle"
+	"github.com/sqlgen-km/sqlgen/languages/golang/pg"
 )
 
 // engineRegistry maps engine names to constructors.
