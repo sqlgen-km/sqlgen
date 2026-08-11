@@ -6,12 +6,22 @@ import (
 )
 
 // GenFactory generates the MapperFactory.java static factory class.
-func GenFactory(mapperName string, engines []Engine) string {
+func GenFactory(mapperName string, engines []Engine, mapperPkg string, engineSubPkg bool) string {
 	var b strings.Builder
 
 	shortName := mapperName
 
-	b.WriteString("import org.apache.ibatis.session.SqlSession;\n\n")
+	b.WriteString("import org.apache.ibatis.session.SqlSession;\n")
+
+	// When engine implementations are in sub-packages, import them.
+	if engineSubPkg {
+		for _, e := range engines {
+			fmt.Fprintf(&b, "import %s.%s.%s%s;\n",
+				mapperPkg, e.Name(), shortName, suffixFor(e.Name()))
+		}
+	}
+
+	b.WriteString("\n")
 
 	b.WriteString("/** Factory for creating {@code ")
 	b.WriteString(shortName)

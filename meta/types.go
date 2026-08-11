@@ -66,11 +66,3 @@ type ParamRef struct {
 	Param   string // function param name: "filter" or "id"
 	IsField bool   // true if this is param.field access
 }
-
-// JavaPkgCfg is a single Java package configuration.
-type JavaPkgCfg struct {
-	ModelPackage  string   `yaml:"modelPackage"`
-	MapperPackage string   `yaml:"mapperPackage"`
-	Out           string   `yaml:"out"`
-	Files         []string `yaml:"files"`
-}

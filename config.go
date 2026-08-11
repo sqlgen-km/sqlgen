@@ -7,7 +7,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
-	"github.com/sqlgen-km/sqlgen/meta"
+	"github.com/sqlgen-km/sqlgen/languages/golang"
+	"github.com/sqlgen-km/sqlgen/languages/java"
 )
 
 // Config is the sqlg.yaml configuration.
@@ -19,24 +20,14 @@ type Config struct {
 
 // GoCfg is the Go language configuration block.
 type GoCfg struct {
-	Tags     []string   `yaml:"tags"`
-	Packages []GoPkgCfg `yaml:"packages"`
-}
-
-// GoPkgCfg is a single Go package configuration.
-type GoPkgCfg struct {
-	Out   string   `yaml:"out"`   // output directory
-	Tags  []string `yaml:"tags"`  // per-package tag override
-	Files []string `yaml:"files"` // glob patterns for .sql files
+	Tags     []string           `yaml:"tags"`
+	Packages []golang.PkgCfg   `yaml:"packages"`
 }
 
 // JavaCfg is the Java language configuration block.
 type JavaCfg struct {
-	Packages []meta.JavaPkgCfg `yaml:"packages"`
+	Packages []java.PkgCfg `yaml:"packages"`
 }
-
-// JavaPkgCfg is an alias for meta.JavaPkgCfg.
-type JavaPkgCfg = meta.JavaPkgCfg
 
 // loadConfig reads sqlg.yaml from dir.
 func loadConfig(dir string) (*Config, error) {

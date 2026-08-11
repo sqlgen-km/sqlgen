@@ -223,7 +223,7 @@ func TestJavaGolden(t *testing.T) {
 
 			// Generate Java files
 			tmpDir := t.TempDir()
-			pkg := JavaPkgCfg{
+			pkg := java.PkgCfg{
 				ModelPackage:  "com.example.entity",
 				MapperPackage: "com.example.mapper",
 				Out:           tmpDir,
