@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.2.0 (2026-08-11)
+
+Java/MyBatis 代码生成支持。
+
+### 新增
+
+- **Java/MyBatis 代码生成** — DSL 可以生成 Java 代码（Model Record + Mapper 接口 + Factory）
+- **多引擎 Mapper** — 每个 SQL 方言生成独立 Mapper 实现（`ItemsMapperPG`、`ItemsMapperMySQL`、`ItemsMapperOracle`、`ItemsMapperMSSQL`）
+- **Spring 集成** — Mapper 生成 `@Mapper`、`@Profile` 注解，Factory 的静态 `create()` 方法可在无 Spring 环境使用
+- **engineSubPackage 配置** — Java 新增 `engineSubPackage` 选项，开启后引擎实现类进入 `mapperPackage.{engine}` 子包（如 `com.dc.mapper.pg.ItemsMapperPG`），减少单目录文件数
+- **{stem} 占位符** — `mapperPackage` 支持 `{stem}` 按 DSL 文件名自动分组
+- **ON CONFLICT 支持** — INSERT 语句的 `ON CONFLICT DO NOTHING/UPDATE` 跨方言翻译（PG 原生、MySQL `INSERT IGNORE`/`ON DUPLICATE KEY`、Oracle PL/SQL、MSSQL MERGE）
+- **Golden 测试** — Java 生成输出增加 golden 文件测试
+
+### 变更
+
+- **代码组织重构** — Go/Java 引擎从 `engines/` 移入 `languages/go/` 和 `languages/java/`
+- **meta 包抽取** — 共享类型（`ParsedFile`、`ModelDef`、`QueryDef`）和查询构建逻辑独立为 `meta/` 包
+- **配置类型归位** — `GoPkgCfg` 移入 `languages/golang/`，`JavaPkgCfg` 移入 `languages/java/`，删除 `config.go` 中的 alias
+
 ## v1.0.1 (2026-08-11)
 
 Oracle 引擎兼容性修复。
