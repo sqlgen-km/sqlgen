@@ -31,6 +31,8 @@ func go2javaType(goType string) string {
 		return "byte[]"
 	case "*string":
 		return "String"
+	case "*int32":
+		return "Integer"
 	case "*int64":
 		return "Long"
 	case "*bool":
@@ -38,7 +40,29 @@ func go2javaType(goType string) string {
 	case "*float64":
 		return "java.math.BigDecimal"
 	default:
+		// Handle Go slice types: []string → String[], []int64 → long[], etc.
+		if strings.HasPrefix(goType, "[]") {
+			return go2javaType(goType[2:]) + "[]"
+		}
 		return goType
+	}
+}
+
+// boxJavaType returns the boxed version for use in generic type arguments.
+func boxJavaType(goType string) string {
+	switch goType {
+	case "int64", "int":
+		return "Long"
+	case "int32":
+		return "Integer"
+	case "float64":
+		return "java.math.BigDecimal"
+	case "string":
+		return "String"
+	case "bool":
+		return "Boolean"
+	default:
+		return go2javaType(goType)
 	}
 }
 
@@ -99,7 +123,7 @@ func MethodReturnType(spec engines.RunnerSpec, modelType string) string {
 		return modelType
 	case engines.RunnerQueryMany:
 		if spec.IsScalar {
-			return "List<" + go2javaType(modelType) + ">"
+			return "List<" + boxJavaType(modelType) + ">"
 		}
 		return "List<" + modelType + ">"
 	case engines.RunnerExec:

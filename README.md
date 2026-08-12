@@ -1,13 +1,11 @@
 # sqlgen — SQL 代码生成器
 
-从 DSL（`.sql` 文件）自动生成类型安全的 Go 数据库访问代码，支持多引擎方言。
+从 DSL（`.sql` 文件）自动生成类型安全的数据库访问代码，支持 Go 和 Java/MyBatis 双语言输出，一份 DSL 生成四种方言。
 
 ## 架构
 
 ```
-DSL (.sql)  →  Parser  →  AST  →  引擎  →  生成代码
-                    ↑                ↑
-              sql_parser.go    engines/{pg,mssql,oracle,mysql}
+DSL (.sql)  →  Parser  →  AST  →  meta  →  languages/{go,java}  →  生成代码
 ```
 
 ## 安装
@@ -17,6 +15,8 @@ go install github.com/sqlgen-km/sqlgen@latest
 ```
 
 ## 快速开始
+
+### Go
 
 **1. 编写 DSL 文件 `users.sql`：**
 
@@ -39,10 +39,11 @@ LIMIT @page_limit OFFSET @page_offset
 **2. 创建配置文件 `sqlg.yaml`：**
 
 ```yaml
-tags: ["json"]
-engines: ["pg"]
-packages:
-  - files: ["users.sql"]
+engines: ["pg", "mysql", "oracle", "mssql"]
+go:
+  tags: ["json"]
+  packages:
+    - files: ["users.sql"]
 ```
 
 **3. 生成代码：**
@@ -60,17 +61,80 @@ q, _ := demo.New(db, "postgres")
 users, _ := q.FindByGender(ctx, "M", 10, 0)
 ```
 
+### Java
+
+**1. DSL 文件同上。**
+
+**2. 创建配置文件 `sqlg.yaml`：**
+
+```yaml
+engines: ["pg", "mysql"]
+java:
+  packages:
+    - files: ["users.sql"]
+      modelPackage: "com.example.entity"
+      mapperPackage: "com.example.mapper"
+```
+
+**3. 生成代码，输出到 `mapperPackage` 对应目录。**
+
+**4. 使用生成代码（Spring Boot）：**
+
+```java
+@Autowired
+private SqlSessionFactory sqlSessionFactory;
+
+SqlSession session = sqlSessionFactory.openSession();
+UsersMapper mapper = UsersMapperFactory.create(session, "postgresql");
+User user = mapper.findByID(1);
+```
+
+## 配置
+
+在工作目录创建 `sqlg.yaml`：
+
+```yaml
+# 目标方言（默认 ["pg"]）
+engines: ["pg", "mysql", "oracle", "mssql"]
+
+# ── Go 语言配置 ──
+go:
+  tags: ["json"]           # struct tag（可被 packages 级别覆盖）
+  packages:
+    - out: "./output"      # 输出目录（默认 "."）
+      files: ["sql/*.sql"]
+      tags: ["json", "db"] # 局部覆盖
+
+# ── Java 语言配置 ──
+java:
+  packages:
+    - files: ["sql/*.sql"]
+      modelPackage: "com.example.entity"     # Model Record 包名
+      mapperPackage: "com.example.mapper"    # Mapper 接口包名
+      out: "./src/main/java"                 # 输出根目录（默认 "."）
+      engineSubPackage: true                 # 引擎 Mapper 放子包（默认 false）
+```
+
+### Java 配置说明
+
+| 配置项 | 说明 |
+|--------|------|
+| `modelPackage` | Model Record 的 Java 包名 |
+| `mapperPackage` | Mapper 接口 + Factory 的 Java 包名，支持 `{stem}` 占位符按 DSL 文件名分组 |
+| `out` | 输出根目录，包路径从 `out` 开始拼接 |
+| `engineSubPackage` | 开启后引擎 Mapper 进入 `mapperPackage.{engine}` 子包（如 `com.example.mapper.pg.UsersMapperPG`），减少单目录文件数 |
+
 ## DSL 语法
 
 ### 文件结构
 
 ```sql
--- package: demo          # 第一行，声明 Go 包名
+-- package: demo          # 第一行，声明包名（Go）或 Java 全限定包名
 
--- @方法文档注释            # 生成 Go doc comment
+-- @方法文档注释            # 生成 Go doc comment / Java Javadoc
 -- dsl说明注释              # 不参与生成，仅 DSL 可读
 
--- model: Name { field Type }   # 声明结构体
+-- model: Name { field Type }   # 声明结构体/Record
 -- model: Name={col:Field,...}  # 字段映射（缺省列）
 -- model: Name                  # 引用已有 model
 -- model int64                  # 标量简写
@@ -84,13 +148,13 @@ SELECT ...                       # SQL 语句
 
 ### 执行模式
 
-| `:mode` | 语义 | 返回类型 | 示例 |
-|---------|------|---------|------|
-| `:one` | 单行 | `(*T, error)` | `SELECT ... WHERE id = @id` |
-| `:one` + `int64` | 标量 | `(int64, error)` | `SELECT COUNT(*) WHERE ...` |
-| `:many` | 多行 | `([]*T, error)` | `SELECT ... ORDER BY id` |
-| `:exec` | 执行 | `error` | `INSERT / UPDATE / DELETE` |
-| `:execrows` | 行数 | `(int64, error)` | `DELETE WHERE status = @s` |
+| `:mode` | 语义 | Go 返回类型 | Java 返回类型 | 示例 |
+|---------|------|------------|-------------|------|
+| `:one` | 单行 | `(*T, error)` | `T` | `SELECT ... WHERE id = @id` |
+| `:one` + `int64` | 标量 | `(int64, error)` | `long` | `SELECT COUNT(*) WHERE ...` |
+| `:many` | 多行 | `([]*T, error)` | `List<T>` | `SELECT ... ORDER BY id` |
+| `:exec` | 执行 | `error` | `void` | `INSERT / UPDATE / DELETE` |
+| `:execrows` | 行数 | `(int64, error)` | `long` | `DELETE WHERE status = @s` |
 
 ### model 语法
 
@@ -102,34 +166,34 @@ SELECT ...                       # SQL 语句
 -- model { id int64, name string }
 
 -- 标量
--- model int64    →  (int64, error)
--- model string   →  (string, error)
+-- model int64    →  Go: (int64, error)  /  Java: long
+-- model string   →  Go: (string, error) /  Java: String
 
--- 字段映射：SQL列 → Go字段
+-- 字段映射：SQL列 → Go字段/Java字段
 -- model: OrderSummary={
     id,
-    order_no,              -- 默认 id→ID, order_no→OrderNo
-    total_count:Count,     -- SQL列 total_count → Go字段 Count
-    status,                -- 默认 status→Status
+    order_no,              -- 默认 id→id/ID, order_no→orderNo/OrderNo
+    total_count:Count,     -- SQL列 total_count → 字段 Count/count
+    status,                -- 默认 status→Status/status
 }
 ```
 
 ### 参数类型
 
-| DSL 类型 | Go 类型 | SQL 引用 |
-|----------|---------|---------|
-| `int`, `int64`, `int32` | 同左 | `@id` |
-| `float64` | `float64` | `@score` |
-| `string` | `string` | `@name` |
-| `bool` | `bool` | `@active` |
-| `*int64`, `*string` | 指针(可空) | `COALESCE(@x, col)` |
-| `[]int64` | `[]int64` | `WHERE id IN (@ids)` |
-| `time.Time` | `time.Time` | `@created_at` |
-| `ModelName` | model struct | `@filter.gender` |
+| DSL 类型 | Go 类型 | Java 类型 | SQL 引用 |
+|----------|---------|----------|---------|
+| `int`, `int64`, `int32` | 同左 | `long`, `int` | `@id` |
+| `float64` | `float64` | `java.math.BigDecimal` | `@score` |
+| `string` | `string` | `String` | `@name` |
+| `bool` | `bool` | `boolean` | `@active` |
+| `*int64`, `*string` | 指针(可空) | 包装类型 | `COALESCE(@x, col)` |
+| `[]int64` | `[]int64` | `List<Long>` | `WHERE id IN (@ids)` |
+| `time.Time` | `time.Time` | `java.time.Instant` | `@created_at` |
+| `ModelName` | model struct | model Record | `@filter.gender` |
 
 ### 文档注释
 
-`-- @` 开头的行生成 Go doc comment。多行支持，首行不含方法名时自动补全。
+`-- @` 开头的行生成文档注释。多行支持，首行不含方法名时自动补全。
 
 ```sql
 -- @根据用户ID查询完整信息
@@ -139,7 +203,7 @@ SELECT ...                       # SQL 语句
 SELECT * FROM users WHERE id = @id
 ```
 
-生成：
+Go 生成：
 
 ```go
 // FindByID 根据用户ID查询完整信息
@@ -149,13 +213,11 @@ func (q *queries) FindByID(ctx context.Context, id int64) (*User, error) { ... }
 
 ### SQL 特性
 
-支持 PostgreSQL 标准 SQL：
-
 - SELECT / INSERT / UPDATE / DELETE
 - 子查询、IN、EXISTS、BETWEEN
 - JOIN（INNER / LEFT / RIGHT / CROSS）
 - GROUP BY / HAVING / ORDER BY / LIMIT / OFFSET
-- INSERT ... ON CONFLICT (DO UPDATE / DO NOTHING)
+- INSERT ... ON CONFLICT (DO UPDATE / DO NOTHING) — 跨方言翻译
 - INSERT ... RETURNING col（仅单列）
 - ILIKE（其他方言自动翻译为 LOWER LIKE）
 - COALESCE / NOW() 等函数
@@ -164,114 +226,59 @@ func (q *queries) FindByID(ctx context.Context, id int64) (*User, error) { ... }
 
 ## 字段映射规则
 
-**默认**：SQL 列名（snake_case）自动映射为 Go 字段名（PascalCase）。
+**默认**：SQL 列名（snake_case）自动映射为字段名（Go PascalCase / Java camelCase）。
 
 ```sql
 -- model: User { id int64, display_name string }
--- id → ID, display_name → DisplayName
+-- Go:  id → ID, display_name → DisplayName
+-- Java: id → id, display_name → displayName
 ```
 
 **显式覆盖**：`{sql_col:GoField}` 仅声明不一致的列。
 
-## 配置
-
-在工作目录创建 `sqlg.yaml`：
-
-```yaml
-tags: ["json"]           # struct tag
-engines: ["pg"]          # 目标方言（默认 ["pg"]）
-packages:
-  - path: "./output"     # 输出目录（默认 "."）
-    files: ["sql/*.sql"]
-    tags: ["json", "db"] # 局部覆盖
-```
-
-多引擎配置：
-
-```yaml
-engines: ["pg", "mssql", "oracle", "mysql"]
-```
-
-运行 `sqlgen`（无参数）即可。
-
 ## 生成代码
 
-每个 `.sql` 文件生成：
+### Go 输出
+
+每个 package 生成：
 
 | 文件 | 内容 |
 |------|------|
 | `models.go` | 所有 model struct |
 | `<name>.go` | Querier 接口 + factorys map + New 函数 + 方法体 |
 | `<name>.sql.pg.go` | PG 引擎 Runner 实现 |
+| `<name>.sql.mysql.go` | MySQL 引擎 Runner 实现 |
+| `<name>.sql.oracle.go` | Oracle 引擎 Runner 实现 |
 | `<name>.sql.mssql.go` | MSSQL 引擎 Runner 实现 |
-| ... | 其他引擎 |
 
-### 生成代码结构
+### Java 输出
 
-```go
-// models.go
-type User struct {
-    ID          int64     `json:"id"`
-    DisplayName string    `json:"display_name"`
-}
+每个 DSL 文件生成：
 
-// users.go
-type Querier interface {
-    FindByID(ctx context.Context, id int64) (*User, error)
-    Close() error
-}
-
-type insertUserRunner interface {
-    execReturning(ctx context.Context, name string) (int64, error)
-    close() error
-    withTx(tx *sql.Tx) insertUserRunner
-}
-
-type usersRunnerFactory interface {
-    newInsertUser(db *sql.DB) insertUserRunner
-    newFindByID(db *sql.DB) findByIdRunner
-}
-
-var factorys = map[string]usersRunnerFactory{
-    "postgres": &usersRunnerFactoryPG{},
-    "mysql":    &usersRunnerFactoryMySQL{},
-    "oracle":   &usersRunnerFactoryOracle{},
-}
-
-func New(db *sql.DB, driver string) (Querier, error) { ... }
-
-// users.sql.pg.go
-const insertUserConstPG = `INSERT INTO users (name) VALUES ($1) RETURNING id`
-
-type usersRunnerFactoryPG struct{}
-func (f *usersRunnerFactoryPG) newInsertUser(db *sql.DB) insertUserRunner {
-    return &insertUserPG{db: db}
-}
-
-type insertUserPG struct { stmt *sql.Stmt; db *sql.DB }
-func (r *insertUserPG) execReturning(ctx context.Context, name string) (int64, error) {
-    if r.stmt == nil { r.stmt, _ = r.db.PrepareContext(ctx, insertUserConstPG) }
-    var id int64
-    row := r.stmt.QueryRowContext(ctx, name)
-    row.Scan(&id)
-    return id, nil
-}
-```
+| 文件 | 内容 |
+|------|------|
+| `<Model>.java` | Java Record（modelPackage） |
+| `<Name>Mapper.java` | Mapper 接口 + `@Mapper` 注解 |
+| `<Name>MapperPG.java` | PG 方言 Mapper 实现（`@Profile("postgresql")`） |
+| `<Name>MapperMySQL.java` | MySQL 方言 Mapper 实现 |
+| `<Name>MapperOracle.java` | Oracle 方言 Mapper 实现 |
+| `<Name>MapperMSSQL.java` | MSSQL 方言 Mapper 实现 |
+| `<Name>MapperFactory.java` | Factory 类，静态 `create()` 驱动路由 |
 
 **关键设计**：
-- Runner 方法签名与 Querier 一致（类型化）
-- 不同方言的 SQL 常量和 struct 带后缀（`ConstPG`、`findByIDPG`），可在同一包共存
-- Factory map + `New(db, driver)` 自动路由方言
-- 无状态 factory（空 struct），方法接收 `db *sql.DB`
+- Mapper 接口为抽象契约，所有方言实现同一接口
+- 方言 Mapper 用 `@Profile` 注解自动激活对应数据源
+- Factory 的静态 `create()` 方法可在无 Spring 环境手动路由
+- `engineSubPackage: true` 时引擎 Mapper 分散到子包，减少单目录文件数
 
 ## 引擎
 
 | 引擎 | 占位符 | RETURNING | ON CONFLICT | LIMIT/OFFSET | 状态 |
 |------|--------|-----------|-------------|-------------|------|
 | PG | `$1, $2` | 原生 | 原生 | 原生 | ✅ |
-| MySQL | `?` | 两步(Exec+LAST_INSERT_ID) | INSERT IGNORE/ON DUPLICATE | 原生 | ✅ |
-| Oracle | `:1, :2` | ExecContext+sql.Out | MERGE | OFFSET/FETCH NEXT | ✅ |
-| MSSQL | `@p1, @p2` | OUTPUT | MERGE | 原生 | 🚧 |
+| MySQL | `?` | 两步(Exec+LAST_INSERT_ID) | INSERT IGNORE / ON DUPLICATE | 原生 | ✅ |
+| Oracle | `:1, :2` | ExecContext+sql.Out | PL/SQL 异常处理 | OFFSET/FETCH NEXT | ✅ |
+| MSSQL | `@p1, @p2` | OUTPUT | MERGE | 原生 | ✅ |
 
 ## 测试
 
