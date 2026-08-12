@@ -51,6 +51,9 @@ func (g *Generator) renderSQL(spec engines.RunnerSpec) string {
 	sql = coalesceRe.ReplaceAllString(sql, "IFNULL($1,$2)")
 
 	sql = strings.ReplaceAll(sql, " FROM dual", "")
+	if spec.Kind == engines.RunnerReturningScalar && spec.InsertParam != nil {
+		return java.RenderMyBatisSQLWithNames(sql, spec.InsertParam.MyBatisNames)
+	}
 	return java.RenderMyBatisSQL(sql, spec.Params)
 }
 
@@ -80,10 +83,8 @@ func (g *Generator) writeMethod(b *strings.Builder, spec engines.RunnerSpec, sql
 	case engines.RunnerReturningScalar:
 		fmt.Fprintf(b, "\n    @Override\n")
 		fmt.Fprintf(b, "    @Insert(\"%s\")\n", escapeJava(sql))
-		b.WriteString("    @Options(useGeneratedKeys = true, keyProperty = \"id\", keyColumn = \"id\")\n")
-		fmt.Fprintf(b, "    long %s(", methodName)
-		writeParams(b, spec)
-		b.WriteString(");\n")
+		fmt.Fprintf(b, "    @Options(useGeneratedKeys = true, keyProperty = \"%s\", keyColumn = \"%s\")\n", java.InsertIDName(spec), java.InsertIDColumn(spec))
+		fmt.Fprintf(b, "    void %s(%s %s);\n", methodName, java.InsertParamType(spec), java.InsertParamArg(spec))
 	}
 }
 

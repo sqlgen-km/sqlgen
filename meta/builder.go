@@ -34,15 +34,23 @@ func BuildRunnerSpecs(files []ParsedFile, f *ParsedFile) ([]engines.RunnerSpec, 
 		}
 		kind := DetermineRunnerKind(qb)
 		params := ResolveRunnerParams(qb, models)
+		var insertParam *engines.InsertParam
+		if kind == engines.RunnerReturningScalar {
+			insertParam, err = buildInsertParam(q, models, qb.Prep)
+			if err != nil {
+				return nil, nil, fmt.Errorf("%s:%d: %w", q.Src, q.Line, err)
+			}
+		}
 		specs = append(specs, engines.RunnerSpec{
-			Name:      LowerFirst(q.Name),
-			Kind:      kind,
-			Query:     q.Name,
-			IsScalar:  q.IsScalar,
-			HasILIKE:  qb.Prep.HasILIKE,
-			ModelType: q.Return,
-			Params:    params,
-			Stmt:      qb.Stmt,
+			Name:        LowerFirst(q.Name),
+			Kind:        kind,
+			Query:       q.Name,
+			IsScalar:    q.IsScalar,
+			HasILIKE:    qb.Prep.HasILIKE,
+			ModelType:   q.Return,
+			Params:      params,
+			Stmt:        qb.Stmt,
+			InsertParam: insertParam,
 		})
 	}
 
@@ -259,6 +267,78 @@ func ResolveRunnerParams(qb QueryBuilt, models map[string]ModelDef) []engines.Ru
 		out = append(out, engines.RunnerParam{Name: name, Type: paramType})
 	}
 	return out
+}
+
+// buildInsertParam analyzes an INSERT RETURNING (:one) query and decides how the
+// generated key gets injected into a parameter object.
+//
+// Scenarios:
+//   - single object param (e.g. `-- param: item Item`) → reuse the model directly;
+//     the model must carry the RETURNING column (typically "id"), else it errors.
+//   - otherwise (scalar params, multiple objects, or mixed) → generate a flat
+//     `{Query}Params` class whose fields are the SQL-referenced params.
+func buildInsertParam(q QueryDef, models map[string]ModelDef, prep *SQLPrep) (*engines.InsertParam, error) {
+	idColumn := "id"
+	if len(prep.Returning) > 0 {
+		idColumn = prep.Returning[0]
+	}
+	idName := ToLowerCamel(idColumn)
+
+	var objParams, scalarParams []ParamDef
+	for _, p := range q.Params {
+		if _, ok := models[p.Type]; ok {
+			objParams = append(objParams, p)
+		} else {
+			scalarParams = append(scalarParams, p)
+		}
+	}
+
+	// Single object param → reuse the model
+	if len(objParams) == 1 && len(scalarParams) == 0 {
+		objName := objParams[0].Name
+		mdl := models[objParams[0].Type]
+		// The model must contain the RETURNING column (e.g. "id")
+		hasCol := false
+		for _, f := range mdl.Fields {
+			if ToLowerCamel(f.Name) == idName || LowerFirst(f.Name) == idName {
+				hasCol = true
+				break
+			}
+		}
+		if !hasCol {
+			return nil, fmt.Errorf("query %q: model %q has no field %q (required by RETURNING)", q.Name, objParams[0].Type, idName)
+		}
+		var names []string
+		for _, ref := range prep.Params {
+			if ref.IsField && ref.Param == objName {
+				names = append(names, ToLowerCamel(ref.Field))
+			}
+		}
+		return &engines.InsertParam{ReuseModel: objParams[0].Type, IDColumn: idColumn, IDName: idName, MyBatisNames: names}, nil
+	}
+
+	// Flat params class
+	var fields []engines.InsertParamField
+	var names []string
+	seen := map[string]int{}
+	for _, ref := range prep.Params {
+		var javaName, fieldType string
+		if ref.IsField {
+			fieldType = resolveFieldType(q, ref.Param, ref.Field, models)
+			javaName = ToLowerCamel(ref.Param + "_" + ref.Field)
+		} else {
+			fieldType = resolveParamType(q, ref.Param)
+			javaName = ToLowerCamel(ref.Param)
+		}
+		name := javaName
+		if c := seen[javaName]; c > 0 {
+			name = fmt.Sprintf("%s_%d", javaName, c)
+		}
+		seen[javaName]++
+		fields = append(fields, engines.InsertParamField{JavaName: name, GoType: fieldType})
+		names = append(names, name)
+	}
+	return &engines.InsertParam{IDColumn: idColumn, IDName: idName, Fields: fields, MyBatisNames: names}, nil
 }
 
 // resolveParamType finds the Go type for a simple param by name.

@@ -52,18 +52,12 @@ func (g *Generator) renderSQL(spec engines.RunnerSpec) string {
 	// Strip RETURNING — Oracle requires INTO clause which MyBatis doesn't support.
 	if spec.Kind == engines.RunnerReturningScalar {
 		sql = returningRe.ReplaceAllString(sql, "")
+		// Inject id column with #{id} placeholder (filled by @SelectKey before=true)
+		sql = injectOracleID(sql, java.InsertIDColumn(spec), java.InsertIDName(spec))
+		return java.RenderMyBatisSQLWithNames(sql, spec.InsertParam.MyBatisNames)
 	}
 
-	sql = java.RenderMyBatisSQL(sql, spec.Params)
-
-	// Inject id column with seq.NEXTVAL: before=false @SelectKey uses CURRVAL
-	// to return the generated ID.
-	if spec.Kind == engines.RunnerReturningScalar {
-		seqName := deriveSeqName(spec)
-		sql = injectOracleID(sql, seqName)
-	}
-
-	return sql
+	return java.RenderMyBatisSQL(sql, spec.Params)
 }
 
 var (
@@ -71,11 +65,10 @@ var (
 	insertValuesRe = regexp.MustCompile(`(INSERT INTO \w+) \(([^)]+)\) VALUES \(([^)]+)\)`)
 )
 
-// injectOracleID prepends id to INSERT columns and injects seq.NEXTVAL for Oracle.
-// "INSERT INTO t (col1) VALUES (#{p1})" → "INSERT INTO t (id, col1) VALUES (seq_t.NEXTVAL, #{p1})"
-func injectOracleID(sql, seqName string) string {
-	seqRef := seqName + ".NEXTVAL"
-	return insertValuesRe.ReplaceAllString(sql, "$1 (id, $2) VALUES ("+seqRef+", $3)")
+// injectOracleID prepends the id column and #{id} placeholder for Oracle.
+// "INSERT INTO t (col1) VALUES (:1)" → "INSERT INTO t (id, col1) VALUES (#{id}, :1)"
+func injectOracleID(sql, idColumn, idName string) string {
+	return insertValuesRe.ReplaceAllString(sql, "$1 ("+idColumn+", $2) VALUES (#{"+idName+"}, $3)")
 }
 
 func (g *Generator) writeMethod(b *strings.Builder, spec engines.RunnerSpec, sql string, modelType string) {
@@ -102,12 +95,12 @@ func (g *Generator) writeMethod(b *strings.Builder, spec engines.RunnerSpec, sql
 		b.WriteString(");\n")
 
 	case engines.RunnerReturningScalar:
+		seqName := deriveSeqName(spec)
 		fmt.Fprintf(b, "\n    @Override\n")
 		fmt.Fprintf(b, "    @Insert(\"%s\")\n", escapeJava(sql))
-		b.WriteString("    @Options(useGeneratedKeys = true, keyProperty = \"id\", keyColumn = \"id\")\n")
-		fmt.Fprintf(b, "    long %s(", methodName)
-		writeParams(b, spec)
-		b.WriteString(");\n")
+		fmt.Fprintf(b, "    @SelectKey(statement = \"SELECT %s.NEXTVAL FROM dual\",\n", seqName)
+		fmt.Fprintf(b, "               keyProperty = \"%s\", before = true, resultType = Long.class)\n", java.InsertIDName(spec))
+		fmt.Fprintf(b, "    void %s(%s %s);\n", methodName, java.InsertParamType(spec), java.InsertParamArg(spec))
 	}
 }
 
@@ -123,12 +116,13 @@ func (g *Generator) renderMerge(ins *ast.InsertStmt, spec engines.RunnerSpec) st
 	sql := g.d.Render(ins)
 	// Strip RETURNING — Oracle requires INTO clause which MyBatis doesn't support.
 	sql = returningRe.ReplaceAllString(sql, "")
-	sql = java.RenderMyBatisSQL(sql, spec.Params)
 	if !oc.DoUpdate {
-		// DO NOTHING: simple INSERT with seq.NEXTVAL + CURRVAL @SelectKey
+		// DO NOTHING: simple INSERT wrapped in PL/SQL block
 		if spec.Kind == engines.RunnerReturningScalar {
-			seqName := deriveSeqName(spec)
-			sql = injectOracleID(sql, seqName)
+			sql = injectOracleID(sql, java.InsertIDColumn(spec), java.InsertIDName(spec))
+			sql = java.RenderMyBatisSQLWithNames(sql, spec.InsertParam.MyBatisNames)
+		} else {
+			sql = java.RenderMyBatisSQL(sql, spec.Params)
 		}
 		return "BEGIN " + sql + "; EXCEPTION WHEN DUP_VAL_ON_INDEX THEN NULL; END;"
 	}
@@ -137,21 +131,22 @@ func (g *Generator) renderMerge(ins *ast.InsertStmt, spec engines.RunnerSpec) st
 
 func (g *Generator) renderMergeUpdate(ins *ast.InsertStmt, spec engines.RunnerSpec) string {
 	oc := ins.OnConflict
-	seqName := "seq_" + ins.Table.Name
+	idColumn := java.InsertIDColumn(spec)
+	idName := java.InsertIDName(spec)
 
 	// Build USING subquery: SELECT #{p1} AS col1, #{p2} AS col2 FROM dual
 	var usingCols strings.Builder
-	for i, p := range spec.Params {
+	for i := range ins.Columns {
 		if i > 0 {
 			usingCols.WriteString(", ")
 		}
-		fmt.Fprintf(&usingCols, "#{%s} AS %s", p.Name, ins.Columns[i])
+		fmt.Fprintf(&usingCols, "#{%s} AS %s", spec.InsertParam.MyBatisNames[i], ins.Columns[i])
 	}
 
-	// INSERT column/value lists: prepend id with seq.NEXTVAL
+	// INSERT column/value lists: prepend id with #{id} (from @SelectKey)
 	var colList, valList strings.Builder
-	colList.WriteString("id")
-	valList.WriteString(seqName + ".NEXTVAL")
+	colList.WriteString(idColumn)
+	valList.WriteString("#{" + idName + "}")
 	for _, c := range ins.Columns {
 		colList.WriteString(", ")
 		valList.WriteString(", ")

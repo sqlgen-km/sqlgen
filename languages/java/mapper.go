@@ -37,12 +37,17 @@ func genMapperMethodSig(b *strings.Builder, spec engines.RunnerSpec, modelType s
 
 	fmt.Fprintf(b, "%s %s(", retType, methodName)
 
-	for i, p := range spec.Params {
-		if i > 0 {
-			b.WriteString(", ")
+	if spec.Kind == engines.RunnerReturningScalar {
+		// INSERT RETURNING: single object parameter carrying the generated key
+		fmt.Fprintf(b, "%s %s", InsertParamType(spec), InsertParamArg(spec))
+	} else {
+		for i, p := range spec.Params {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			javaType := go2javaType(p.Type)
+			fmt.Fprintf(b, "@Param(\"%s\") %s %s", p.Name, javaType, p.Name)
 		}
-		javaType := go2javaType(p.Type)
-		fmt.Fprintf(b, "@Param(\"%s\") %s %s", p.Name, javaType, p.Name)
 	}
 
 	b.WriteString(");")

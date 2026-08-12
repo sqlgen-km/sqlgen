@@ -80,6 +80,51 @@ func RenderMyBatisSQL(dialectSQL string, params []engines.RunnerParam) string {
 	return sql
 }
 
+// RenderMyBatisSQLWithNames is like RenderMyBatisSQL but takes placeholder names
+// directly. Used for INSERT RETURNING where the SQL references object fields
+// (camelCase) rather than flat param names.
+func RenderMyBatisSQLWithNames(dialectSQL string, names []string) string {
+	sql := dialectSQL
+	for _, n := range names {
+		sql = replaceFirstPlaceholder(sql, "#{"+n+"}")
+	}
+	return sql
+}
+
+// InsertParamType returns the parameter object type name for an INSERT RETURNING
+// method: the reused model name (single-object scenario) or "{Query}Params".
+func InsertParamType(spec engines.RunnerSpec) string {
+	if spec.InsertParam != nil && spec.InsertParam.ReuseModel != "" {
+		return spec.InsertParam.ReuseModel
+	}
+	return spec.Query + "Params"
+}
+
+// InsertParamArg returns the parameter variable name for an INSERT RETURNING
+// method: lowerCamel of the model name, or "params" for a generated class.
+func InsertParamArg(spec engines.RunnerSpec) string {
+	if spec.InsertParam != nil && spec.InsertParam.ReuseModel != "" {
+		return LowerFirst(spec.InsertParam.ReuseModel)
+	}
+	return "params"
+}
+
+// InsertIDName returns the camelCase Java field name for the generated key.
+func InsertIDName(spec engines.RunnerSpec) string {
+	if spec.InsertParam != nil && spec.InsertParam.IDName != "" {
+		return spec.InsertParam.IDName
+	}
+	return "id"
+}
+
+// InsertIDColumn returns the DB column name for the generated key.
+func InsertIDColumn(spec engines.RunnerSpec) string {
+	if spec.InsertParam != nil && spec.InsertParam.IDColumn != "" {
+		return spec.InsertParam.IDColumn
+	}
+	return "id"
+}
+
 var (
 	reDollar = regexp.MustCompile(`\$\d+`)
 	reColon  = regexp.MustCompile(`:\d+`)
@@ -133,7 +178,8 @@ func MethodReturnType(spec engines.RunnerSpec, modelType string) string {
 	case engines.RunnerExecRows:
 		return "long"
 	case engines.RunnerReturningScalar:
-		return "long"
+		// Key is injected into the parameter object; method returns void.
+		return "void"
 	default:
 		return "void"
 	}

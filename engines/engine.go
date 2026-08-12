@@ -62,16 +62,36 @@ type RunnerParam struct {
 	Type string // Go type (e.g. "int64", "*string")
 }
 
+// InsertParamField is one flattened field of a generated INSERT parameter class.
+type InsertParamField struct {
+	JavaName string // camelCase Java field name (e.g. "displayName", "userName")
+	GoType   string // Go/DSL type, mapped to Java via the language layer
+}
+
+// InsertParam describes the parameter object for INSERT RETURNING (:one) methods.
+// MyBatis injects the generated key into the object, so the method must take an
+// object (not scalar) parameter.
+type InsertParam struct {
+	ReuseModel string // non-empty: reuse this model type (single-object scenario)
+	IDColumn   string // DB column name of the RETURNING column (e.g. "id")
+	IDName     string // camelCase Java field name (e.g. "id", "userId")
+	Fields     []InsertParamField
+	// MyBatisNames is the placeholder names for #{...} in the SQL, aligned with
+	// the method's RunnerSpec.Params order.
+	MyBatisNames []string
+}
+
 // RunnerSpec 单个操作的运行器定义（生成到共享代码）
 type RunnerSpec struct {
-	Name      string           // 运行器字段名（小写导出）
-	Kind      RunnerKind       // 运行器类型
-	Query     string           // 对应方法名
-	IsScalar  bool
-	HasILIKE  bool             // DSL used ILIKE
-	ModelType string           // return model type name (e.g. "Item", "int64", "string")
-	Params    []RunnerParam    // 方法签名参数（类型化）
-	Stmt      ast.Statement // AST 语句（引擎据此渲染 SQL 和决定执行策略）
+	Name         string         // 运行器字段名（小写导出）
+	Kind         RunnerKind     // 运行器类型
+	Query        string         // 对应方法名
+	IsScalar     bool
+	HasILIKE     bool           // DSL used ILIKE
+	ModelType    string         // return model type name (e.g. "Item", "int64", "string")
+	Params       []RunnerParam  // 方法签名参数（类型化）
+	Stmt         ast.Statement  // AST 语句（引擎据此渲染 SQL 和决定执行策略）
+	InsertParam  *InsertParam   // 仅 RunnerReturningScalar 非 nil
 }
 
 // Engine 引擎接口
