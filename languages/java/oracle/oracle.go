@@ -56,7 +56,7 @@ func (g *Generator) writeMethod(b *strings.Builder, spec engines.RunnerSpec, sql
 	methodName := java.LowerFirst(spec.Query)
 	annotation := stmtAnnotation(spec)
 	mt := modelType
-	if spec.IsScalar && spec.Kind != engines.RunnerReturningScalar && spec.ModelType != "" {
+	if spec.ModelType != "" && spec.Kind != engines.RunnerReturningScalar {
 		mt = spec.ModelType
 	}
 

@@ -29,7 +29,7 @@ public interface ItemsMapperPG extends ItemsMapper {
     @Override
     @Insert("INSERT INTO items (name, price, stock) VALUES (#{name}, #{price}, #{stock}) RETURNING id")
     @Options(useGeneratedKeys = true, keyProperty = "id", keyColumn = "id")
-    long insertItem(Item item);
+    long insertItem(@Param("name") String name, @Param("price") java.math.BigDecimal price, @Param("stock") int stock);
 
     @Override
     @Update("UPDATE items SET name = #{name}, price = #{price} WHERE id = #{id}")

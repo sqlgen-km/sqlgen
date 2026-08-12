@@ -19,7 +19,7 @@ public interface ItemsMapper {
 
     long countItems();
 
-    long insertItem(Item item);
+    long insertItem(@Param("name") String name, @Param("price") java.math.BigDecimal price, @Param("stock") int stock);
 
     long updateItem(@Param("name") String name, @Param("price") java.math.BigDecimal price, @Param("id") long id);
 

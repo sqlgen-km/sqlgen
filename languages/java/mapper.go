@@ -29,7 +29,7 @@ func GenSharedMapper(mapperName string, specs []engines.RunnerSpec, modelType st
 // genMapperMethodSig generates a single method signature for the shared interface.
 func genMapperMethodSig(b *strings.Builder, spec engines.RunnerSpec, modelType string) {
 	mt := modelType
-	if spec.IsScalar && spec.ModelType != "" {
+	if spec.ModelType != "" {
 		mt = spec.ModelType
 	}
 	retType := MethodReturnType(spec, mt)
@@ -37,16 +37,12 @@ func genMapperMethodSig(b *strings.Builder, spec engines.RunnerSpec, modelType s
 
 	fmt.Fprintf(b, "%s %s(", retType, methodName)
 
-	if spec.Kind == engines.RunnerReturningScalar {
-		fmt.Fprintf(b, "%s item", modelType)
-	} else {
-		for i, p := range spec.Params {
-			if i > 0 {
-				b.WriteString(", ")
-			}
-			javaType := go2javaType(p.Type)
-			fmt.Fprintf(b, "@Param(\"%s\") %s %s", p.Name, javaType, p.Name)
+	for i, p := range spec.Params {
+		if i > 0 {
+			b.WriteString(", ")
 		}
+		javaType := go2javaType(p.Type)
+		fmt.Fprintf(b, "@Param(\"%s\") %s %s", p.Name, javaType, p.Name)
 	}
 
 	b.WriteString(");")
@@ -73,7 +69,7 @@ func GenMapperImports(specs []engines.RunnerSpec) string {
 				needsMath = true
 			}
 		}
-		if spec.Kind != engines.RunnerReturningScalar && len(spec.Params) > 0 {
+		if len(spec.Params) > 0 {
 			needsParam = true
 		}
 	}

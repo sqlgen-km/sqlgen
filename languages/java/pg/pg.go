@@ -43,9 +43,9 @@ func (g *Generator) renderSQL(spec engines.RunnerSpec) string {
 func (g *Generator) writeMethod(b *strings.Builder, spec engines.RunnerSpec, sql string, modelType string) {
 	methodName := java.LowerFirst(spec.Query)
 	annotation := stmtAnnotation(spec)
-	// For scalar queries, use spec.ModelType (e.g. "int64") instead of primary model name
+	// Use spec-level model type when available (but not for RETURNING scalar — those already have entity type)
 	mt := modelType
-	if spec.IsScalar && spec.Kind != engines.RunnerReturningScalar && spec.ModelType != "" {
+	if spec.ModelType != "" && spec.Kind != engines.RunnerReturningScalar {
 		mt = spec.ModelType
 	}
 
@@ -68,7 +68,9 @@ func (g *Generator) writeMethod(b *strings.Builder, spec engines.RunnerSpec, sql
 		fmt.Fprintf(b, "\n    @Override\n")
 		fmt.Fprintf(b, "    @Insert(\"%s\")\n", escapeJava(sql))
 		b.WriteString("    @Options(useGeneratedKeys = true, keyProperty = \"id\", keyColumn = \"id\")\n")
-		fmt.Fprintf(b, "    long %s(%s item);\n", methodName, mt)
+		fmt.Fprintf(b, "    long %s(", methodName)
+		writeParams(b, spec)
+		b.WriteString(");\n")
 	}
 }
 

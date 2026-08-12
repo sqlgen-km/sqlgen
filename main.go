@@ -11,7 +11,15 @@ import (
 	"github.com/sqlgen-km/sqlgen/languages/java"
 )
 
+// version is set at build time via -ldflags.
+var version = "dev"
+
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "version" {
+		fmt.Println(version)
+		return
+	}
+
 	cfg, err := loadConfig(".")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "sqlgen: %v\n", err)
