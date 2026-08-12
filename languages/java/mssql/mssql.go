@@ -74,7 +74,9 @@ func (g *Generator) writeMethod(b *strings.Builder, spec engines.RunnerSpec, sql
 		fmt.Fprintf(b, "\n    @Override\n")
 		fmt.Fprintf(b, "    @Insert(\"%s\")\n", escapeJava(sql))
 		b.WriteString("    @Options(useGeneratedKeys = true, keyProperty = \"id\", keyColumn = \"id\")\n")
-		fmt.Fprintf(b, "    long %s(%s item);\n", methodName, modelType)
+		fmt.Fprintf(b, "    long %s(", methodName)
+		writeParams(b, spec)
+		b.WriteString(");\n")
 	}
 }
 

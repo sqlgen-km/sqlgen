@@ -81,7 +81,9 @@ func (g *Generator) writeMethod(b *strings.Builder, spec engines.RunnerSpec, sql
 		fmt.Fprintf(b, "    @Insert(\"%s\")\n", escapeJava(sql))
 		fmt.Fprintf(b, "    @SelectKey(statement = \"SELECT %s.NEXTVAL FROM dual\",\n", seqName)
 		b.WriteString("               keyProperty = \"id\", before = true, resultType = long.class)\n")
-		fmt.Fprintf(b, "    long %s(%s item);\n", methodName, modelType)
+		fmt.Fprintf(b, "    long %s(", methodName)
+		writeParams(b, spec)
+		b.WriteString(");\n")
 	}
 }
 
