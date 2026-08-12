@@ -50,31 +50,32 @@ func (g *Generator) renderSQL(spec engines.RunnerSpec) string {
 	sql = replaceWord(sql, "false", "0")
 
 	// Strip RETURNING — Oracle requires INTO clause which MyBatis doesn't support.
-	// @SelectKey(before=true) obtains the ID from the sequence instead.
 	if spec.Kind == engines.RunnerReturningScalar {
 		sql = returningRe.ReplaceAllString(sql, "")
 	}
 
 	sql = java.RenderMyBatisSQL(sql, spec.Params)
 
-	// Inject id column for @SelectKey(before=true): the sequence value is bound
-	// to #{id} by MyBatis and must appear in the INSERT column list.
+	// Inject id column with seq.NEXTVAL: before=false @SelectKey uses CURRVAL
+	// to return the generated ID.
 	if spec.Kind == engines.RunnerReturningScalar {
-		sql = injectOracleID(sql)
+		seqName := deriveSeqName(spec)
+		sql = injectOracleID(sql, seqName)
 	}
 
 	return sql
 }
 
 var (
-	returningRe   = regexp.MustCompile(`\s+RETURNING\s+\S+\s*$`)
+	returningRe    = regexp.MustCompile(`\s+RETURNING\s+\S+\s*$`)
 	insertValuesRe = regexp.MustCompile(`(INSERT INTO \w+) \(([^)]+)\) VALUES \(([^)]+)\)`)
 )
 
-// injectOracleID prepends id to INSERT columns and VALUES for @SelectKey(before=true).
-// "INSERT INTO t (col1, col2) VALUES (#{p1}, #{p2})" → "INSERT INTO t (id, col1, col2) VALUES (#{id}, #{p1}, #{p2})"
-func injectOracleID(sql string) string {
-	return insertValuesRe.ReplaceAllString(sql, "$1 (id, $2) VALUES (#{id}, $3)")
+// injectOracleID prepends id to INSERT columns and injects seq.NEXTVAL for Oracle.
+// "INSERT INTO t (col1) VALUES (#{p1})" → "INSERT INTO t (id, col1) VALUES (seq_t.NEXTVAL, #{p1})"
+func injectOracleID(sql, seqName string) string {
+	seqRef := seqName + ".NEXTVAL"
+	return insertValuesRe.ReplaceAllString(sql, "$1 (id, $2) VALUES ("+seqRef+", $3)")
 }
 
 func (g *Generator) writeMethod(b *strings.Builder, spec engines.RunnerSpec, sql string, modelType string) {
@@ -101,29 +102,14 @@ func (g *Generator) writeMethod(b *strings.Builder, spec engines.RunnerSpec, sql
 		b.WriteString(");\n")
 
 	case engines.RunnerReturningScalar:
-		isMerge := func() bool {
-			if ins, ok := spec.Stmt.(*ast.InsertStmt); ok {
-				return ins.OnConflict != nil && ins.OnConflict.DoUpdate
-			}
-			return false
-		}()
-		if isMerge {
-			// MERGE already includes seq.NEXTVAL — no @SelectKey needed
-			fmt.Fprintf(b, "\n    @Override\n")
-			fmt.Fprintf(b, "    @Insert(\"%s\")\n", escapeJava(sql))
-			fmt.Fprintf(b, "    long %s(", methodName)
-			writeParams(b, spec)
-			b.WriteString(");\n")
-		} else {
-			seqName := deriveSeqName(spec)
-			fmt.Fprintf(b, "\n    @Override\n")
-			fmt.Fprintf(b, "    @Insert(\"%s\")\n", escapeJava(sql))
-			fmt.Fprintf(b, "    @SelectKey(statement = \"SELECT %s.NEXTVAL FROM dual\",\n", seqName)
-			b.WriteString("               keyProperty = \"id\", before = true, resultType = long.class)\n")
-			fmt.Fprintf(b, "    long %s(", methodName)
-			writeParams(b, spec)
-			b.WriteString(");\n")
-		}
+		seqName := deriveSeqName(spec)
+		fmt.Fprintf(b, "\n    @Override\n")
+		fmt.Fprintf(b, "    @Insert(\"%s\")\n", escapeJava(sql))
+		fmt.Fprintf(b, "    @SelectKey(statement = \"SELECT %s.CURRVAL FROM dual\",\n", seqName)
+		b.WriteString("               keyProperty = \"id\", before = false, resultType = long.class)\n")
+		fmt.Fprintf(b, "    long %s(", methodName)
+		writeParams(b, spec)
+		b.WriteString(");\n")
 	}
 }
 
@@ -140,13 +126,12 @@ func (g *Generator) renderMerge(ins *ast.InsertStmt, spec engines.RunnerSpec) st
 	// Strip RETURNING — Oracle requires INTO clause which MyBatis doesn't support.
 	sql = returningRe.ReplaceAllString(sql, "")
 	sql = java.RenderMyBatisSQL(sql, spec.Params)
-	// Inject id into simple INSERT for RunnerReturningScalar + DO NOTHING
-	// (DO UPDATE goes through renderMergeUpdate which handles id separately)
-	if !oc.DoUpdate && spec.Kind == engines.RunnerReturningScalar {
-		sql = injectOracleID(sql)
-		return "BEGIN " + sql + "; EXCEPTION WHEN DUP_VAL_ON_INDEX THEN NULL; END;"
-	}
 	if !oc.DoUpdate {
+		// DO NOTHING: simple INSERT with seq.NEXTVAL + CURRVAL @SelectKey
+		if spec.Kind == engines.RunnerReturningScalar {
+			seqName := deriveSeqName(spec)
+			sql = injectOracleID(sql, seqName)
+		}
 		return "BEGIN " + sql + "; EXCEPTION WHEN DUP_VAL_ON_INDEX THEN NULL; END;"
 	}
 	return g.renderMergeUpdate(ins, spec)
