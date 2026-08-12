@@ -102,11 +102,9 @@ func (g *Generator) writeMethod(b *strings.Builder, spec engines.RunnerSpec, sql
 		b.WriteString(");\n")
 
 	case engines.RunnerReturningScalar:
-		seqName := deriveSeqName(spec)
 		fmt.Fprintf(b, "\n    @Override\n")
 		fmt.Fprintf(b, "    @Insert(\"%s\")\n", escapeJava(sql))
-		fmt.Fprintf(b, "    @SelectKey(statement = \"SELECT %s.CURRVAL FROM dual\",\n", seqName)
-		b.WriteString("               keyProperty = \"id\", before = false, resultType = long.class)\n")
+		b.WriteString("    @Options(useGeneratedKeys = true, keyProperty = \"id\", keyColumn = \"id\")\n")
 		fmt.Fprintf(b, "    long %s(", methodName)
 		writeParams(b, spec)
 		b.WriteString(");\n")
