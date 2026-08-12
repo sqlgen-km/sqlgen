@@ -80,8 +80,7 @@ func (g *Generator) writeMethod(b *strings.Builder, spec engines.RunnerSpec, sql
 	case engines.RunnerReturningScalar:
 		fmt.Fprintf(b, "\n    @Override\n")
 		fmt.Fprintf(b, "    @Insert(\"%s\")\n", escapeJava(sql))
-		b.WriteString("    @SelectKey(statement = \"SELECT LAST_INSERT_ID()\",\n")
-		b.WriteString("               keyProperty = \"id\", before = false, resultType = long.class)\n")
+		b.WriteString("    @Options(useGeneratedKeys = true, keyProperty = \"id\", keyColumn = \"id\")\n")
 		fmt.Fprintf(b, "    long %s(", methodName)
 		writeParams(b, spec)
 		b.WriteString(");\n")
