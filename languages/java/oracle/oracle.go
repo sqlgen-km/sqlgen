@@ -33,7 +33,8 @@ func (g *Generator) GenMapper(stem string, specs []engines.RunnerSpec, modelType
 
 func (g *Generator) renderSQL(spec engines.RunnerSpec) string {
 	if ins, ok := spec.Stmt.(*ast.InsertStmt); ok && ins.OnConflict != nil {
-		return g.renderMerge(ins)
+		sql := g.renderMerge(ins)
+		return java.RenderMyBatisSQL(sql, spec.Params)
 	}
 
 	sql := g.d.Render(spec.Stmt)
@@ -49,8 +50,17 @@ func (g *Generator) renderSQL(spec engines.RunnerSpec) string {
 	sql = replaceWord(sql, "true", "1")
 	sql = replaceWord(sql, "false", "0")
 
+	// Strip RETURNING for RunnerReturningScalar: @SelectKey(before=true)
+	// already obtains the ID from the sequence, and bare RETURNING without
+	// INTO clause is invalid Oracle syntax.
+	if spec.Kind == engines.RunnerReturningScalar {
+		sql = returningRe.ReplaceAllString(sql, "")
+	}
+
 	return java.RenderMyBatisSQL(sql, spec.Params)
 }
+
+var returningRe = regexp.MustCompile(`\s+RETURNING\s+\S+\s*$`)
 
 func (g *Generator) writeMethod(b *strings.Builder, spec engines.RunnerSpec, sql string, modelType string) {
 	methodName := java.LowerFirst(spec.Query)
@@ -96,15 +106,17 @@ func deriveSeqName(spec engines.RunnerSpec) string {
 
 func (g *Generator) renderMerge(ins *ast.InsertStmt) string {
 	oc := ins.OnConflict
+	sql := g.d.Render(ins)
+	// Strip RETURNING — Oracle requires INTO clause for RETURNING which
+	// MyBatis doesn't support. @SelectKey(before=true) handles ID via sequence.
+	sql = returningRe.ReplaceAllString(sql, "")
 	if !oc.DoUpdate {
-		sql := g.d.Render(ins)
 		return "BEGIN " + sql + "; EXCEPTION WHEN DUP_VAL_ON_INDEX THEN NULL; END;"
 	}
-	return g.renderMergeUpdate(ins)
+	return g.renderMergeUpdate(ins, sql)
 }
 
-func (g *Generator) renderMergeUpdate(ins *ast.InsertStmt) string {
-	sql := g.d.Render(ins)
+func (g *Generator) renderMergeUpdate(ins *ast.InsertStmt, sql string) string {
 	oc := ins.OnConflict
 
 	var colList, valList, onCond, setList strings.Builder
