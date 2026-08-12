@@ -33,8 +33,7 @@ func (g *Generator) GenMapper(stem string, specs []engines.RunnerSpec, modelType
 
 func (g *Generator) renderSQL(spec engines.RunnerSpec) string {
 	if ins, ok := spec.Stmt.(*ast.InsertStmt); ok && ins.OnConflict != nil {
-		sql := g.renderMerge(ins)
-		return java.RenderMyBatisSQL(sql, spec.Params)
+		return g.renderMerge(ins, spec)
 	}
 
 	sql := g.d.Render(spec.Stmt)
@@ -50,17 +49,33 @@ func (g *Generator) renderSQL(spec engines.RunnerSpec) string {
 	sql = replaceWord(sql, "true", "1")
 	sql = replaceWord(sql, "false", "0")
 
-	// Strip RETURNING for RunnerReturningScalar: @SelectKey(before=true)
-	// already obtains the ID from the sequence, and bare RETURNING without
-	// INTO clause is invalid Oracle syntax.
+	// Strip RETURNING — Oracle requires INTO clause which MyBatis doesn't support.
+	// @SelectKey(before=true) obtains the ID from the sequence instead.
 	if spec.Kind == engines.RunnerReturningScalar {
 		sql = returningRe.ReplaceAllString(sql, "")
 	}
 
-	return java.RenderMyBatisSQL(sql, spec.Params)
+	sql = java.RenderMyBatisSQL(sql, spec.Params)
+
+	// Inject id column for @SelectKey(before=true): the sequence value is bound
+	// to #{id} by MyBatis and must appear in the INSERT column list.
+	if spec.Kind == engines.RunnerReturningScalar {
+		sql = injectOracleID(sql)
+	}
+
+	return sql
 }
 
-var returningRe = regexp.MustCompile(`\s+RETURNING\s+\S+\s*$`)
+var (
+	returningRe   = regexp.MustCompile(`\s+RETURNING\s+\S+\s*$`)
+	insertValuesRe = regexp.MustCompile(`(INSERT INTO \w+) \(([^)]+)\) VALUES \(([^)]+)\)`)
+)
+
+// injectOracleID prepends id to INSERT columns and VALUES for @SelectKey(before=true).
+// "INSERT INTO t (col1, col2) VALUES (#{p1}, #{p2})" → "INSERT INTO t (id, col1, col2) VALUES (#{id}, #{p1}, #{p2})"
+func injectOracleID(sql string) string {
+	return insertValuesRe.ReplaceAllString(sql, "$1 (id, $2) VALUES (#{id}, $3)")
+}
 
 func (g *Generator) writeMethod(b *strings.Builder, spec engines.RunnerSpec, sql string, modelType string) {
 	methodName := java.LowerFirst(spec.Query)
@@ -86,14 +101,29 @@ func (g *Generator) writeMethod(b *strings.Builder, spec engines.RunnerSpec, sql
 		b.WriteString(");\n")
 
 	case engines.RunnerReturningScalar:
-		seqName := deriveSeqName(spec)
-		fmt.Fprintf(b, "\n    @Override\n")
-		fmt.Fprintf(b, "    @Insert(\"%s\")\n", escapeJava(sql))
-		fmt.Fprintf(b, "    @SelectKey(statement = \"SELECT %s.NEXTVAL FROM dual\",\n", seqName)
-		b.WriteString("               keyProperty = \"id\", before = true, resultType = long.class)\n")
-		fmt.Fprintf(b, "    long %s(", methodName)
-		writeParams(b, spec)
-		b.WriteString(");\n")
+		isMerge := func() bool {
+			if ins, ok := spec.Stmt.(*ast.InsertStmt); ok {
+				return ins.OnConflict != nil && ins.OnConflict.DoUpdate
+			}
+			return false
+		}()
+		if isMerge {
+			// MERGE already includes seq.NEXTVAL — no @SelectKey needed
+			fmt.Fprintf(b, "\n    @Override\n")
+			fmt.Fprintf(b, "    @Insert(\"%s\")\n", escapeJava(sql))
+			fmt.Fprintf(b, "    long %s(", methodName)
+			writeParams(b, spec)
+			b.WriteString(");\n")
+		} else {
+			seqName := deriveSeqName(spec)
+			fmt.Fprintf(b, "\n    @Override\n")
+			fmt.Fprintf(b, "    @Insert(\"%s\")\n", escapeJava(sql))
+			fmt.Fprintf(b, "    @SelectKey(statement = \"SELECT %s.NEXTVAL FROM dual\",\n", seqName)
+			b.WriteString("               keyProperty = \"id\", before = true, resultType = long.class)\n")
+			fmt.Fprintf(b, "    long %s(", methodName)
+			writeParams(b, spec)
+			b.WriteString(");\n")
+		}
 	}
 }
 
@@ -104,30 +134,49 @@ func deriveSeqName(spec engines.RunnerSpec) string {
 	return "seq_items"
 }
 
-func (g *Generator) renderMerge(ins *ast.InsertStmt) string {
+func (g *Generator) renderMerge(ins *ast.InsertStmt, spec engines.RunnerSpec) string {
 	oc := ins.OnConflict
 	sql := g.d.Render(ins)
-	// Strip RETURNING — Oracle requires INTO clause for RETURNING which
-	// MyBatis doesn't support. @SelectKey(before=true) handles ID via sequence.
+	// Strip RETURNING — Oracle requires INTO clause which MyBatis doesn't support.
 	sql = returningRe.ReplaceAllString(sql, "")
+	sql = java.RenderMyBatisSQL(sql, spec.Params)
+	// Inject id into simple INSERT for RunnerReturningScalar + DO NOTHING
+	// (DO UPDATE goes through renderMergeUpdate which handles id separately)
+	if !oc.DoUpdate && spec.Kind == engines.RunnerReturningScalar {
+		sql = injectOracleID(sql)
+		return "BEGIN " + sql + "; EXCEPTION WHEN DUP_VAL_ON_INDEX THEN NULL; END;"
+	}
 	if !oc.DoUpdate {
 		return "BEGIN " + sql + "; EXCEPTION WHEN DUP_VAL_ON_INDEX THEN NULL; END;"
 	}
-	return g.renderMergeUpdate(ins, sql)
+	return g.renderMergeUpdate(ins, spec)
 }
 
-func (g *Generator) renderMergeUpdate(ins *ast.InsertStmt, sql string) string {
+func (g *Generator) renderMergeUpdate(ins *ast.InsertStmt, spec engines.RunnerSpec) string {
 	oc := ins.OnConflict
+	seqName := "seq_" + ins.Table.Name
 
-	var colList, valList, onCond, setList strings.Builder
-	for i, c := range ins.Columns {
+	// Build USING subquery: SELECT #{p1} AS col1, #{p2} AS col2 FROM dual
+	var usingCols strings.Builder
+	for i, p := range spec.Params {
 		if i > 0 {
-			colList.WriteString(", ")
-			valList.WriteString(", ")
+			usingCols.WriteString(", ")
 		}
+		fmt.Fprintf(&usingCols, "#{%s} AS %s", p.Name, ins.Columns[i])
+	}
+
+	// INSERT column/value lists: prepend id with seq.NEXTVAL
+	var colList, valList strings.Builder
+	colList.WriteString("id")
+	valList.WriteString(seqName + ".NEXTVAL")
+	for _, c := range ins.Columns {
+		colList.WriteString(", ")
+		valList.WriteString(", ")
 		colList.WriteString(c)
 		valList.WriteString("s." + c)
 	}
+
+	var onCond, setList strings.Builder
 	for i, c := range oc.Columns {
 		if i > 0 {
 			onCond.WriteString(" AND ")
@@ -141,11 +190,8 @@ func (g *Generator) renderMergeUpdate(ins *ast.InsertStmt, sql string) string {
 		setList.WriteString(s.Col + " = s." + s.Col)
 	}
 
-	valStart := strings.Index(sql, "VALUES ") + 7
-	valsClause := strings.TrimSpace(sql[valStart:])
-
 	return fmt.Sprintf("MERGE INTO %s t USING (SELECT %s FROM dual) s ON (%s) WHEN MATCHED THEN UPDATE SET %s WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s)",
-		ins.Table.Name, valsClause, onCond.String(), setList.String(), colList.String(), valList.String())
+		ins.Table.Name, usingCols.String(), onCond.String(), setList.String(), colList.String(), valList.String())
 }
 
 func stmtAnnotation(spec engines.RunnerSpec) string {
