@@ -14,9 +14,11 @@ import (
 func Generate(pf *meta.ParsedFile, pkg PkgCfg, engs []Engine) error {
 	stem := meta.FilesStem(pf)
 
-	// Resolve {stem} placeholder in package names
-	modelPkg := strings.ReplaceAll(pkg.ModelPackage, "{stem}", stem)
-	mapperPkg := strings.ReplaceAll(pkg.MapperPackage, "{stem}", stem)
+	// {stem} is always appended to model and mapper packages, giving each DSL
+	// file (stem) its own namespace. Any leftover "{stem}" placeholder in the
+	// config is stripped for backward compatibility.
+	modelPkg := strings.TrimSuffix(strings.ReplaceAll(pkg.ModelPackage, "{stem}", ""), ".") + "." + stem
+	mapperPkg := strings.TrimSuffix(strings.ReplaceAll(pkg.MapperPackage, "{stem}", ""), ".") + "." + stem
 
 	// Build RunnerSpecs
 	specs, models, err := meta.BuildRunnerSpecs([]meta.ParsedFile{*pf}, pf)

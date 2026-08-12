@@ -108,6 +108,15 @@ func (p *fileParser) parse() (*ParsedFile, error) {
 		seen[m.Name] = true
 	}
 
+	// Validate: no duplicate query names
+	seenQ := map[string]bool{}
+	for _, q := range p.queries {
+		if seenQ[q.Name] {
+			return nil, fmt.Errorf("%s: duplicate query %q", p.path, q.Name)
+		}
+		seenQ[q.Name] = true
+	}
+
 	return &ParsedFile{
 		Package: p.pkg,
 		Models:  p.models,
