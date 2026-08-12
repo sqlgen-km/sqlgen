@@ -31,6 +31,8 @@ func go2javaType(goType string) string {
 		return "byte[]"
 	case "*string":
 		return "String"
+	case "*int":
+		return "Long"
 	case "*int32":
 		return "Integer"
 	case "*int64":
@@ -51,9 +53,9 @@ func go2javaType(goType string) string {
 // boxJavaType returns the boxed version for use in generic type arguments.
 func boxJavaType(goType string) string {
 	switch goType {
-	case "int64", "int":
+	case "int64", "int", "*int":
 		return "Long"
-	case "int32":
+	case "int32", "*int32":
 		return "Integer"
 	case "float64":
 		return "java.math.BigDecimal"
@@ -110,7 +112,7 @@ func goTypeNeedsImport(goType string) bool {
 
 // goTypeNeedsMath returns true if the Go type requires a java.math import.
 func goTypeNeedsMath(goType string) bool {
-	return goType == "float64" || goType == "*float64"
+	return strings.Contains(goType, "float64")
 }
 
 // MethodReturnType returns the Java return type for a RunnerSpec.
