@@ -192,6 +192,7 @@ INSERT INTO users (name) VALUES (@name) RETURNING id
 
 - SELECT / INSERT / UPDATE / DELETE
 - 子查询、IN、EXISTS、BETWEEN
+- 数组成员 `= ANY(@arr)`（数组参数唯一写法，见 §4.4）
 - JOIN（INNER / LEFT / RIGHT / CROSS）
 - GROUP BY / HAVING / ORDER BY / LIMIT / OFFSET
 - INSERT ... ON CONFLICT (DO UPDATE / DO NOTHING)
@@ -218,6 +219,34 @@ INSERT INTO users (name) VALUES (@name) RETURNING id
 | `::` 类型转换 | `CAST(x AS type)` |
 | `CASE WHEN @param` | 应用层 |
 | `UNION` | `LEFT JOIN + OR` |
+
+### 4.4 数组成员 `= ANY(@arr)`
+
+数组参数（`[]int64` / `[]string`）的成员判断用 `= ANY(@arr)`，是唯一规范写法：
+
+```sql
+-- param: group_ids []int64
+-- name: FindGroupNamesByIDs :many
+-- model: Group
+SELECT id, name FROM groups WHERE id = ANY(@group_ids)
+```
+
+四方言各自翻译（**签名统一，实现各自特化**）：
+
+| 方言 | 渲染 |
+|------|------|
+| PG | `id = ANY($1)` |
+| MySQL | `JSON_CONTAINS(?, CAST(id AS JSON))` |
+| Oracle | `id IN (SELECT COLUMN_VALUE FROM TABLE(:1))` |
+| MSSQL | `id IN (SELECT value FROM OPENJSON(@p1))` |
+
+**IN 子句约束**：
+
+- `IN (@x)`（括号内仅一个参数，无论是否数组）→ **生成时报错**，提示改用 `= ANY(@x)`（数组）或 `= @x`（标量）。
+- `IN (1, 2, 3)` 字面量列表、`IN (@a, @b)` 多参数、`IN (SELECT ...)` 子查询 → 正常保留。
+- `IN` 语法不用于处理数组参数。
+
+空数组语义 = **返回空结果**（不报错）。详见 `docs/design/array-params.md`。
 
 ## 5. 使用方式
 
