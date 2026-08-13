@@ -21,19 +21,19 @@ func (g *Generator) Name() string       { return "oracle" }
 func (g *Generator) Profile() string    { return "oracle" }
 func (g *Generator) DriverName() string { return "oracle" }
 
-func (g *Generator) GenMapper(stem string, specs []engines.RunnerSpec, modelType string) string {
+func (g *Generator) GenMapper(stem string, specs []engines.RunnerSpec, modelType string, th java.TypeHandlerFn) string {
 	var b strings.Builder
 	for _, spec := range specs {
-		sql := g.renderSQL(spec)
-		g.writeMethod(&b, spec, sql, modelType)
+		sql := g.renderSQL(spec, th)
+		g.writeMethod(&b, spec, sql, modelType, th)
 	}
 	b.WriteString("\n")
 	return b.String()
 }
 
-func (g *Generator) renderSQL(spec engines.RunnerSpec) string {
+func (g *Generator) renderSQL(spec engines.RunnerSpec, th java.TypeHandlerFn) string {
 	if ins, ok := spec.Stmt.(*ast.InsertStmt); ok && ins.OnConflict != nil {
-		return g.renderMerge(ins, spec)
+		return g.renderMerge(ins, spec, th)
 	}
 
 	sql := g.d.Render(spec.Stmt)
@@ -54,10 +54,10 @@ func (g *Generator) renderSQL(spec engines.RunnerSpec) string {
 		sql = returningRe.ReplaceAllString(sql, "")
 		// Inject id column with #{id} placeholder (filled by @SelectKey before=true)
 		sql = injectOracleID(sql, java.InsertIDColumn(spec), java.InsertIDName(spec))
-		return java.RenderMyBatisSQLWithNames(sql, spec.InsertParam.MyBatisNames)
+		return java.RenderMyBatisSQLWithNames(sql, spec.InsertParam, th)
 	}
 
-	return java.RenderMyBatisSQL(sql, spec.Params)
+	return java.RenderMyBatisSQL(sql, spec.Params, th)
 }
 
 var (
@@ -71,7 +71,7 @@ func injectOracleID(sql, idColumn, idName string) string {
 	return insertValuesRe.ReplaceAllString(sql, "$1 ("+idColumn+", $2) VALUES (#{"+idName+"}, $3)")
 }
 
-func (g *Generator) writeMethod(b *strings.Builder, spec engines.RunnerSpec, sql string, modelType string) {
+func (g *Generator) writeMethod(b *strings.Builder, spec engines.RunnerSpec, sql string, modelType string, th java.TypeHandlerFn) {
 	methodName := java.LowerFirst(spec.Query)
 	annotation := stmtAnnotation(spec)
 	mt := modelType
@@ -82,6 +82,9 @@ func (g *Generator) writeMethod(b *strings.Builder, spec engines.RunnerSpec, sql
 	switch spec.Kind {
 	case engines.RunnerQueryOne, engines.RunnerQueryMany:
 		fmt.Fprintf(b, "\n    @Override\n")
+		if r := java.RenderResults(spec, th); r != "" {
+			fmt.Fprintf(b, "    %s\n", r)
+		}
 		fmt.Fprintf(b, "    %s(\"%s\")\n", annotation, escapeJava(sql))
 		fmt.Fprintf(b, "    %s %s(", java.MethodReturnType(spec, mt), methodName)
 		writeParams(b, spec)
@@ -111,7 +114,7 @@ func deriveSeqName(spec engines.RunnerSpec) string {
 	return "seq_items"
 }
 
-func (g *Generator) renderMerge(ins *ast.InsertStmt, spec engines.RunnerSpec) string {
+func (g *Generator) renderMerge(ins *ast.InsertStmt, spec engines.RunnerSpec, th java.TypeHandlerFn) string {
 	oc := ins.OnConflict
 	sql := g.d.Render(ins)
 	// Strip RETURNING — Oracle requires INTO clause which MyBatis doesn't support.
@@ -120,9 +123,9 @@ func (g *Generator) renderMerge(ins *ast.InsertStmt, spec engines.RunnerSpec) st
 		// DO NOTHING: simple INSERT wrapped in PL/SQL block
 		if spec.Kind == engines.RunnerReturningScalar {
 			sql = injectOracleID(sql, java.InsertIDColumn(spec), java.InsertIDName(spec))
-			sql = java.RenderMyBatisSQLWithNames(sql, spec.InsertParam.MyBatisNames)
+			sql = java.RenderMyBatisSQLWithNames(sql, spec.InsertParam, th)
 		} else {
-			sql = java.RenderMyBatisSQL(sql, spec.Params)
+			sql = java.RenderMyBatisSQL(sql, spec.Params, th)
 		}
 		return "BEGIN " + sql + "; EXCEPTION WHEN DUP_VAL_ON_INDEX THEN NULL; END;"
 	}

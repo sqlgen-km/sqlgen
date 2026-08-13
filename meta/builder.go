@@ -42,15 +42,16 @@ func BuildRunnerSpecs(files []ParsedFile, f *ParsedFile) ([]engines.RunnerSpec, 
 			}
 		}
 		specs = append(specs, engines.RunnerSpec{
-			Name:        LowerFirst(q.Name),
-			Kind:        kind,
-			Query:       q.Name,
-			IsScalar:    q.IsScalar,
-			HasILIKE:    qb.Prep.HasILIKE,
-			ModelType:   q.Return,
-			Params:      params,
-			Stmt:        qb.Stmt,
-			InsertParam: insertParam,
+			Name:         LowerFirst(q.Name),
+			Kind:         kind,
+			Query:        q.Name,
+			IsScalar:     q.IsScalar,
+			HasILIKE:     qb.Prep.HasILIKE,
+			ModelType:    q.Return,
+			Params:       params,
+			Stmt:         qb.Stmt,
+			InsertParam:  insertParam,
+			ArrayColumns: arrayColumns(q, kind, models),
 		})
 	}
 
@@ -352,6 +353,32 @@ func resolveParamType(q QueryDef, name string) string {
 		}
 	}
 	return "any"
+}
+
+// arrayColumns returns the array-typed result columns (non-[]byte) of the model
+// returned by a query, for @Results typeHandler generation.
+func arrayColumns(q QueryDef, kind engines.RunnerKind, models map[string]ModelDef) []engines.ArrayColumn {
+	if kind != engines.RunnerQueryOne && kind != engines.RunnerQueryMany {
+		return nil
+	}
+	if q.IsScalar || q.Return == "" {
+		return nil
+	}
+	mdl, ok := models[q.Return]
+	if !ok {
+		return nil
+	}
+	var cols []engines.ArrayColumn
+	for _, f := range mdl.Fields {
+		if engines.IsSliceParam(f.Type) {
+			cols = append(cols, engines.ArrayColumn{
+				Column: ToSnake(f.Name),
+				Field:  f.Name,
+				GoType: f.Type,
+			})
+		}
+	}
+	return cols
 }
 
 // resolveFieldType finds the Go type for a struct field access (param.field).

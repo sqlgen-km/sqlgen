@@ -84,6 +84,9 @@ func Generate(pf *meta.ParsedFile, pkg PkgCfg, engs []Engine) error {
 		if err := writeJavaEngineMapper(engineDir, enginePkg, mapperName, specs, modelType, modelPkg, mapperPkg, eng); err != nil {
 			return err
 		}
+		if err := writeJavaTypeHandlers(engineDir, enginePkg, specs, eng); err != nil {
+			return err
+		}
 	}
 
 	// Factory
@@ -227,10 +230,51 @@ func javaGenEngineMapperFile(mapperName string, specs []engines.RunnerSpec, mode
 	b.WriteString(GenMapperImports(specs))
 
 	suffix := suffixForJava(eng.Name())
+	th := TypeHandlerFn(func(goType string) string {
+		if !engines.IsSliceParam(goType) {
+			return ""
+		}
+		return enginePkg + "." + typeHandlerName(go2javaType(goType), suffix)
+	})
 	b.WriteString(GenEngineMapperHeader(mapperName, eng.Profile(), suffix))
-	b.WriteString(eng.GenMapper(mapperName, specs, modelType))
+	b.WriteString(eng.GenMapper(mapperName, specs, modelType, th))
 	b.WriteString(GenEngineMapperFooter())
 	return b.String()
+}
+
+// writeJavaTypeHandlers writes the array TypeHandler classes for one dialect engine.
+func writeJavaTypeHandlers(dir, pkg string, specs []engines.RunnerSpec, eng Engine) error {
+	suffix := suffixForJava(eng.Name())
+	seen := map[string]bool{}
+	var goTypes []string
+	add := func(t string) {
+		if engines.IsSliceParam(t) && !seen[t] {
+			seen[t] = true
+			goTypes = append(goTypes, t)
+		}
+	}
+	for _, spec := range specs {
+		for _, p := range spec.Params {
+			add(p.Type)
+		}
+		if spec.InsertParam != nil {
+			for _, f := range spec.InsertParam.Fields {
+				add(f.GoType)
+			}
+		}
+		for _, c := range spec.ArrayColumns {
+			add(c.GoType)
+		}
+	}
+	for _, goType := range goTypes {
+		javaType := go2javaType(goType)
+		className := typeHandlerName(javaType, suffix)
+		content := genTypeHandler(eng.Name(), pkg, className, javaType, goType)
+		if err := os.WriteFile(filepath.Join(dir, className+".java"), []byte(content), 0644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // addModelImports writes import statements for model classes used in method signatures.

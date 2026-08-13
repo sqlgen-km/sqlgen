@@ -62,6 +62,14 @@ type RunnerParam struct {
 	Type string // Go type (e.g. "int64", "*string")
 }
 
+// ArrayColumn describes a result column that is array-typed (non-[]byte) and
+// needs a TypeHandler in @Results.
+type ArrayColumn struct {
+	Column string // SQL column name (snake_case)
+	Field  string // model field name (PascalCase)
+	GoType string // Go type e.g. "[]string"
+}
+
 // InsertParamField is one flattened field of a generated INSERT parameter class.
 type InsertParamField struct {
 	JavaName string // camelCase Java field name (e.g. "displayName", "userName")
@@ -92,6 +100,7 @@ type RunnerSpec struct {
 	Params       []RunnerParam  // 方法签名参数（类型化）
 	Stmt         ast.Statement  // AST 语句（引擎据此渲染 SQL 和决定执行策略）
 	InsertParam  *InsertParam   // 仅 RunnerReturningScalar 非 nil
+	ArrayColumns []ArrayColumn  // 返回模型中的数组列（需 @Results typeHandler）
 }
 
 // Engine 引擎接口

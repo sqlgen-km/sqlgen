@@ -1,6 +1,7 @@
 package java
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -68,25 +69,43 @@ func boxJavaType(goType string) string {
 	}
 }
 
+// TypeHandlerFn resolves the fully-qualified TypeHandler class name for a Go
+// slice type, or "" if the type is not an array (or no TypeHandler is needed).
+type TypeHandlerFn func(goType string) string
+
 // RenderMyBatisSQL converts a dialect SQL string (with positional placeholders like
 // $1, ?, :1, @p1) to MyBatis #{paramName} placeholder syntax. The RunnerSpec.Params
-// list provides the parameter names in order.
-func RenderMyBatisSQL(dialectSQL string, params []engines.RunnerParam) string {
+// list provides the parameter names in order. th, when non-nil, appends a
+// `typeHandler=` attribute for array params.
+func RenderMyBatisSQL(dialectSQL string, params []engines.RunnerParam, th TypeHandlerFn) string {
 	sql := dialectSQL
 	for _, p := range params {
-		replacement := "#{" + p.Name + "}"
+		replacement := "#{" + p.Name
+		if th != nil {
+			if fqn := th(p.Type); fqn != "" {
+				replacement += ", typeHandler=" + fqn
+			}
+		}
+		replacement += "}"
 		sql = replaceFirstPlaceholder(sql, replacement)
 	}
 	return sql
 }
 
-// RenderMyBatisSQLWithNames is like RenderMyBatisSQL but takes placeholder names
-// directly. Used for INSERT RETURNING where the SQL references object fields
-// (camelCase) rather than flat param names.
-func RenderMyBatisSQLWithNames(dialectSQL string, names []string) string {
+// RenderMyBatisSQLWithNames is like RenderMyBatisSQL but takes the INSERT RETURNING
+// parameter object, whose fields (and their Go types) provide the placeholder
+// names (camelCase) aligned with the SQL parameter order.
+func RenderMyBatisSQLWithNames(dialectSQL string, ip *engines.InsertParam, th TypeHandlerFn) string {
 	sql := dialectSQL
-	for _, n := range names {
-		sql = replaceFirstPlaceholder(sql, "#{"+n+"}")
+	for i, n := range ip.MyBatisNames {
+		replacement := "#{" + n
+		if th != nil && i < len(ip.Fields) {
+			if fqn := th(ip.Fields[i].GoType); fqn != "" {
+				replacement += ", typeHandler=" + fqn
+			}
+		}
+		replacement += "}"
+		sql = replaceFirstPlaceholder(sql, replacement)
 	}
 	return sql
 }
@@ -130,6 +149,26 @@ var (
 	reColon  = regexp.MustCompile(`:\d+`)
 	reAtP    = regexp.MustCompile(`@p\d+`)
 )
+
+// RenderResults generates the @Results annotation (with typeHandler) for array
+// result columns of a SELECT, or "" if none.
+func RenderResults(spec engines.RunnerSpec, th TypeHandlerFn) string {
+	if th == nil || len(spec.ArrayColumns) == 0 {
+		return ""
+	}
+	var entries []string
+	for _, c := range spec.ArrayColumns {
+		fqn := th(c.GoType)
+		if fqn == "" {
+			continue
+		}
+		entries = append(entries, fmt.Sprintf("@Result(column=\"%s\", property=\"%s\", typeHandler=%s.class)", c.Column, LowerFirst(c.Field), fqn))
+	}
+	if len(entries) == 0 {
+		return ""
+	}
+	return "@Results({\n        " + strings.Join(entries, ",\n        ") + "\n    })"
+}
 
 // replaceFirstPlaceholder replaces the first positional placeholder found
 // ($N, :N, @pN, or ?) with the given replacement string.

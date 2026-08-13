@@ -20,17 +20,17 @@ func (g *Generator) Name() string       { return "mssql" }
 func (g *Generator) Profile() string    { return "mssql" }
 func (g *Generator) DriverName() string { return "sqlserver" }
 
-func (g *Generator) GenMapper(stem string, specs []engines.RunnerSpec, modelType string) string {
+func (g *Generator) GenMapper(stem string, specs []engines.RunnerSpec, modelType string, th java.TypeHandlerFn) string {
 	var b strings.Builder
 	for _, spec := range specs {
-		sql := g.renderSQL(spec)
-		g.writeMethod(&b, spec, sql, modelType)
+		sql := g.renderSQL(spec, th)
+		g.writeMethod(&b, spec, sql, modelType, th)
 	}
 	b.WriteString("\n")
 	return b.String()
 }
 
-func (g *Generator) renderSQL(spec engines.RunnerSpec) string {
+func (g *Generator) renderSQL(spec engines.RunnerSpec, th java.TypeHandlerFn) string {
 	if ins, ok := spec.Stmt.(*ast.InsertStmt); ok && ins.OnConflict != nil {
 		return g.renderMerge(ins)
 	}
@@ -45,22 +45,25 @@ func (g *Generator) renderSQL(spec engines.RunnerSpec) string {
 	sql = strings.ReplaceAll(sql, "NOW()", "GETDATE()")
 
 	if spec.Kind == engines.RunnerReturningScalar && spec.InsertParam != nil {
-		return java.RenderMyBatisSQLWithNames(sql, spec.InsertParam.MyBatisNames)
+		return java.RenderMyBatisSQLWithNames(sql, spec.InsertParam, th)
 	}
-	return java.RenderMyBatisSQL(sql, spec.Params)
+	return java.RenderMyBatisSQL(sql, spec.Params, th)
 }
 
-func (g *Generator) writeMethod(b *strings.Builder, spec engines.RunnerSpec, sql string, modelType string) {
+func (g *Generator) writeMethod(b *strings.Builder, spec engines.RunnerSpec, sql string, modelType string, th java.TypeHandlerFn) {
 	methodName := java.LowerFirst(spec.Query)
 	annotation := stmtAnnotation(spec)
 	mt := modelType
-	if spec.IsScalar && spec.Kind != engines.RunnerReturningScalar && spec.ModelType != "" {
+	if spec.ModelType != "" && spec.Kind != engines.RunnerReturningScalar {
 		mt = spec.ModelType
 	}
 
 	switch spec.Kind {
 	case engines.RunnerQueryOne, engines.RunnerQueryMany:
 		fmt.Fprintf(b, "\n    @Override\n")
+		if r := java.RenderResults(spec, th); r != "" {
+			fmt.Fprintf(b, "    %s\n", r)
+		}
 		fmt.Fprintf(b, "    %s(\"%s\")\n", annotation, escapeJava(sql))
 		fmt.Fprintf(b, "    %s %s(", java.MethodReturnType(spec, mt), methodName)
 		writeParams(b, spec)

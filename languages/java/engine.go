@@ -19,6 +19,7 @@ type Engine interface {
 
 	// GenMapper generates the body of a MyBatis Mapper implementation interface
 	// for the given file stem, runner specs, and primary model type. Output is the
-	// full interface definition (without package/import header).
-	GenMapper(stem string, specs []engines.RunnerSpec, modelType string) string
+	// full interface definition (without package/import header). th resolves array
+	// params' TypeHandler FQN (may be nil when no array params exist).
+	GenMapper(stem string, specs []engines.RunnerSpec, modelType string, th TypeHandlerFn) string
 }
