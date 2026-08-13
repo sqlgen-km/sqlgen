@@ -171,11 +171,11 @@ MySQL:  UPDATE users SET is_active = TRUE
 | 场景 | PG | MSSQL | Oracle | MySQL |
 |------|-----|-------|--------|-------|
 | 列类型 | `TEXT[]` / `INT[]` | 无原生数组 | `VARRAY` / 嵌套表 | `JSON` |
-| IN 查询 | `ANY(@arr)` | `IN (SELECT value FROM STRING_SPLIT(...))` | `MEMBER OF` | `JSON_CONTAINS` |
+| IN 查询 | `ANY(@arr)` | `IN (SELECT value FROM OPENJSON(...))` | `MEMBER OF` | `JSON_CONTAINS` |
 
 ```
 PG:     WHERE id = ANY(@ids)
-MSSQL:  WHERE id IN (SELECT value FROM STRING_SPLIT(@ids, ','))
+MSSQL:  WHERE id IN (SELECT value FROM OPENJSON(@ids))
 Oracle: WHERE id MEMBER OF @ids
 MySQL:  WHERE JSON_CONTAINS(@ids, CAST(id AS JSON))
 ```
