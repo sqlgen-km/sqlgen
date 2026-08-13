@@ -30,6 +30,7 @@ func TestGolden(t *testing.T) {
 		{name: "conflict/products", subdir: "conflict", engines: []string{"pg", "mssql", "oracle", "mysql"}},
 		{name: "exists/users", subdir: "exists", engines: []string{"pg", "mssql", "oracle", "mysql"}},
 		{name: "ilike/users", subdir: "ilike", engines: []string{"pg", "mssql", "oracle", "mysql"}},
+		{name: "arrays/arr", subdir: "arrays", engines: []string{"pg", "mssql", "oracle", "mysql"}},
 		{name: "errors/dup_model", subdir: "errors/dup_model", wantError: true},
 		{name: "errors/unmatched_field", subdir: "errors/unmatched_field", wantError: true},
 		{name: "errors/returning_star", subdir: "errors/returning_star", wantError: true},
@@ -198,6 +199,7 @@ func TestJavaGolden(t *testing.T) {
 	}{
 		{name: "java/basic", subdir: "java/basic", engines: []string{"pg"}},
 		{name: "java/conflict", subdir: "java/conflict", engines: []string{"pg", "mysql"}},
+		{name: "java/arrays", subdir: "java/arrays", engines: []string{"pg", "mysql", "oracle", "mssql"}},
 	}
 
 	for _, tt := range tests {
