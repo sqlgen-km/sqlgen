@@ -184,6 +184,17 @@ MySQL:  WHERE JSON_CONTAINS(@ids, CAST(id AS JSON))
 Oracle 用 `TABLE()` 反嵌套而非 `MEMBER OF`：`SYS.ODCINUMBERLIST`/`ODCIVARCHAR2LIST` 是 VARRAY，
 `MEMBER OF` 只认嵌套表（实测 ORA-00932），`TABLE()` 对 VARRAY/嵌套表都成立。
 
+绑定方式：
+
+| 方言 | Java | Go |
+|------|------|-----|
+| PG | `java.sql.Array`（`createArrayOf`） | `pq.Array` |
+| MySQL | Jackson JSON 字符串 | JSON 序列化 |
+| Oracle | `oracle.sql.ARRAY`（`SYS.ODCINUMBERLIST`/`ODCIVARCHAR2LIST`） | `go_ora.Object` |
+| MSSQL | Jackson JSON 字符串 | JSON 序列化 |
+
+空数组 = 返回空结果；Oracle Go 侧因 go-ora 空集合 ORA-00600 需框架短路（详见 docs/design/array-params.md）。
+
 ## 15. NULL 排序
 
 | 场景 | PG | MSSQL | Oracle | MySQL |

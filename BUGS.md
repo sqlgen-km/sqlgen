@@ -1,5 +1,7 @@
 # Bug: Java Mapper 方法签名统一使用 System 类型
 
+> ✅ **已修复（v1.2.1）**：`writeMethod` 改用 `spec.ModelType != "" && spec.Kind != RunnerReturningScalar` 选择返回/参数类型（不再用 `spec.IsScalar`），四个方言引擎统一。此处保留记录备查。
+
 ## 现状
 
 DSL (`systems.sql`) 定义了 5 个 model，Entity 生成正确（5 个独立 Java record），但 Mapper 方法签名全部使用 `System` 类型:

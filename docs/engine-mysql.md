@@ -66,6 +66,15 @@ FALSE  →  0
 
 移除 vitess 引入的 `FROM dual`。
 
+## 数组参数
+
+```sql
+WHERE id = ANY(@ids)  →  JSON_CONTAINS(?, CAST(id AS JSON))
+```
+
+- Go 绑定 JSON 数组字符串；Java 绑定 Jackson JSON 字符串
+- 空数组 `JSON_CONTAINS('[]', ...)` 返回空结果
+
 ## Runner 实现
 
 ```go

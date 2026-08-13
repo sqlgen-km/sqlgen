@@ -1,5 +1,33 @@
 # Changelog
 
+## v1.2.2 (未发布)
+
+数组参数跨方言支持。
+
+### 新增
+
+- **数组成员语法 `= ANY(@arr)`** — 数组参数（`[]int64`/`[]string`）成员判断唯一写法；`IN (@x)` 单参数生成时报错
+- **四方言特化渲染** — PG 原生 `= ANY($1)`、MySQL `JSON_CONTAINS`、Oracle `TABLE()` 反嵌套、MSSQL `OPENJSON`
+- **Java TypeHandler 生成** — 每个（方言 × 元素类型）生成 TypeHandler；SQL 内联 `#{param, typeHandler=FQN}` 写参 + `@Results` 读回
+- **Go 数组绑定** — PG `pq.Array`、MySQL/MSSQL JSON 序列化、Oracle `go_ora.Object`
+- **空数组语义** — 空数组 = 返回空结果（不报错）
+
+### 修复
+
+- **Oracle 数组成员用 `TABLE()` 替代 `MEMBER OF`** — `SYS.ODCINUMBERLIST`/`ODCIVARCHAR2LIST` 是 VARRAY，`MEMBER OF` 只认嵌套表（ORA-00932）
+- **Go Oracle 空数组短路** — go-ora 绑空集合 ORA-00600，框架方法对空数组短路
+
+## v1.2.1 (2026-08-12)
+
+INSERT RETURNING 对象参数化 + Java Mapper 类型修复。
+
+### 变更
+
+- **INSERT RETURNING 改对象参数 + void 返回** — 入参扁平化为 `InsertXxxParams`，ID 经 keyProperty 注入参数对象，方法返回 `void`
+- **MySQL/Oracle `@SelectKey` → `@Options(useGeneratedKeys)`** — 与 PG 统一；Oracle 用 `@SelectKey(before=true)` + 序列注入 `#{id}`
+- **Java Mapper 方法签名类型修复** — `writeMethod` 改用 `spec.ModelType` 选择返回/参数类型（修复「System 类型」bug）
+- **`{stem}` 强制追加到 model/mapper 包** + query 名查重
+
 ## v1.2.0 (2026-08-11)
 
 Java/MyBatis 代码生成支持。

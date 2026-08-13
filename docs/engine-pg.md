@@ -47,6 +47,15 @@ FALSE  →  FALSE
 
 vitess 对无 FROM 的 SELECT 会加上 `FROM dual`。PG 引擎渲染后自动移除。
 
+## 数组参数
+
+```sql
+WHERE id = ANY(@ids)  →  id = ANY($1)
+```
+
+- Go 绑定 `pq.Array(ids)`；Java 绑定 `java.sql.Array`（`createArrayOf("bigint", boxed)`）
+- 空数组返回空结果（PG 原生支持 `= ANY('{}')`）
+
 ## Runner 实现
 
 ```go

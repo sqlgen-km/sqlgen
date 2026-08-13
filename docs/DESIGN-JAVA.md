@@ -104,7 +104,8 @@ type Engine interface {
 
     // GenMapper generates method bodies for the Mapper implementation interface.
     // Returns the full interface body (methods annotated with @Select/@Insert/...).
-    GenMapper(stem string, specs []RunnerSpec) string
+    // th resolves array params' TypeHandler FQN (may be nil when no array params).
+    GenMapper(stem string, specs []RunnerSpec, modelType string, th TypeHandlerFn) string
 }
 ```
 
@@ -118,16 +119,26 @@ type Engine interface {
 | `RunnerQueryMany` 标量 | `@Select` | `List<Long>` | |
 | `RunnerExec` | `@Insert` / `@Update` / `@Delete` | `void` | |
 | `RunnerExecRows` | `@Insert` / `@Update` / `@Delete` | `long` | affected rows |
-| `RunnerReturningScalar` | 见 §6 | `long`（item.keyProperty） | ID 写入参数的 keyProperty |
+| `RunnerReturningScalar` | 见 §6 | `void`（对象参数 + keyProperty 注入 ID） | ID 写入参数对象 |
 
 ## 6. INSERT RETURNING — 各数据库策略
+
+INSERT RETURNING（`:one` + 标量，如 `RETURNING id`）生成**对象参数 + `void` 返回**：入参扁平化为 `InsertXxxParams` 类，ID 通过 MyBatis keyProperty 注入参数对象，方法返回 `void`。
 
 | 数据库 | MyBatis 注解 | SQL 文本 |
 |--------|------------|---------|
 | PG | `@Insert` + `@Options(useGeneratedKeys=true, keyProperty="id", keyColumn="id")` | `INSERT ... RETURNING id` |
-| MySQL | `@Insert` + `@SelectKey(statement="SELECT LAST_INSERT_ID()", keyProperty="id", before=false, resultType=long.class)` | `INSERT ...` |
-| Oracle | `@Insert` + `@SelectKey(statement="SELECT seq.NEXTVAL FROM dual", keyProperty="id", before=true, resultType=long.class)` | `INSERT INTO t (id, ...) VALUES (#{id}, ...)` |
+| MySQL | `@Insert` + `@Options(useGeneratedKeys=true, keyProperty="id", keyColumn="id")` | `INSERT ...`（自增，无 RETURNING） |
+| Oracle | `@Insert` + `@SelectKey(statement="SELECT seq_x.NEXTVAL FROM dual", keyProperty="id", before=true, resultType=Long.class)` | `INSERT INTO t (id, ...) VALUES (#{id}, ...)` |
 | MSSQL | `@Insert` + `@Options(useGeneratedKeys=true, keyProperty="id", keyColumn="id")` | `INSERT ... OUTPUT INSERTED.id` |
+
+示例（PG）：
+
+```java
+@Insert("INSERT INTO items (name, price) VALUES (#{name}, #{price}) RETURNING id")
+@Options(useGeneratedKeys = true, keyProperty = "id", keyColumn = "id")
+void insertItem(InsertItemParams params);
+```
 
 ## 7. ON CONFLICT — 各数据库 SQL 文本
 
@@ -164,8 +175,26 @@ func renderMyBatisSQL(spec RunnerSpec, dialectSQL string) string {
 | `*string` | `String`（MyBatis 自动处理 null → setNull） |
 | `*int64` | `Long`（boxed，可为 null） |
 | `*time.Time` | `LocalDateTime`（MyBatis 自动处理 null） |
-| `[]byte` | `byte[]` |
+| `[]byte` | `byte[]`（MyBatis 默认 TypeHandler，不生成自定义） |
+| `[]int64` | `long[]`（自定义 TypeHandler） |
+| `[]string` | `String[]`（自定义 TypeHandler） |
 | `json.RawMessage` | `String` |
+
+### 9.1 数组参数 TypeHandler
+
+数组参数（`[]int64`/`[]string`）MyBatis 无默认 TypeHandler，sqlgen 为每个（方言 × 元素类型）生成一个 TypeHandler（如 `LongArrayTypeHandlerPG`、`StringArrayTypeHandlerMySQL`）：
+
+| 方言 | 写（setNonNullParameter） | 读（getNullableResult） |
+|------|-------------------------|----------------------|
+| PG | `createArrayOf(typeName, boxed)` → `setArray` | `getArray()` → 转 `long[]`/`String[]` |
+| MySQL | Jackson `writeValueAsString` → `setString` | `getString()` → Jackson `readValue` |
+| Oracle | `createARRAY("SYS.ODCINUMBERLIST", boxed)` → `setArray` | `getArray()` → 转数组 |
+| MSSQL | Jackson `writeValueAsString` → `setString` | `getString()` → Jackson `readValue` |
+
+- **写参**：SQL 内联 `#{param, typeHandler=<FQN>}`（不依赖 Spring 装配）。
+- **读回**：含数组列的 SELECT 生成 `@Results`，数组列逐列 `typeHandler=<FQN>`。
+- `[]byte` 不生成（MyBatis 默认 `ByteArrayTypeHandler`）。
+- 数组成员 SQL 渲染见 DIALECTS.md §14 / 详设 docs/design/array-params.md。
 
 ## 10. 生成文件详细规范
 

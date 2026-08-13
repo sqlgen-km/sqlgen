@@ -52,6 +52,15 @@ FALSE  →  0
 
 移除 vitess 引入的 `FROM dual`。
 
+## 数组参数
+
+```sql
+WHERE id = ANY(@ids)  →  id IN (SELECT value FROM OPENJSON(@p1))
+```
+
+- Go 绑定 JSON 数组字符串；Java 绑定 Jackson JSON 字符串
+- 空数组 `OPENJSON('[]')` 返回 0 行（天然正确，故不用 `STRING_SPLIT('')`）
+
 ## Runner 实现
 
 ```go

@@ -72,6 +72,16 @@ TRUE   →  1
 FALSE  →  0
 ```
 
+## 数组参数
+
+```sql
+WHERE id = ANY(@ids)  →  id IN (SELECT COLUMN_VALUE FROM TABLE(:1))
+```
+
+- 用 `TABLE()` 反嵌套而非 `MEMBER OF`：`SYS.ODCINUMBERLIST`/`ODCIVARCHAR2LIST` 是 VARRAY，`MEMBER OF` 只认嵌套表（实测 ORA-00932）
+- Go 绑定 `go_ora.Object{Owner:"SYS", Name:"ODCINUMBERLIST", Value: ids}`；Java 绑定 `oracle.sql.ARRAY`（`createARRAY`）
+- Go 侧空数组需框架短路（go-ora 绑空/nil 集合触发 ORA-00600 kokbgc2ip1）；Java `createARRAY` 空数组正常返回 0 行
+
 ## Runner 实现
 
 ```go

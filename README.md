@@ -187,8 +187,9 @@ SELECT ...                       # SQL 语句
 | `string` | `string` | `String` | `@name` |
 | `bool` | `bool` | `boolean` | `@active` |
 | `*int64`, `*string` | 指针(可空) | 包装类型 | `COALESCE(@x, col)` |
-| `[]int64` | `[]int64` | `List<Long>` | `WHERE id IN (@ids)` |
-| `time.Time` | `time.Time` | `java.time.Instant` | `@created_at` |
+| `[]int64` | `[]int64` | `long[]` | `WHERE id = ANY(@ids)` |
+| `[]string` | `[]string` | `String[]` | `WHERE name = ANY(@names)` |
+| `time.Time` | `time.Time` | `java.time.LocalDateTime` | `@created_at` |
 | `ModelName` | model struct | model Record | `@filter.gender` |
 
 ### 文档注释
@@ -215,6 +216,7 @@ func (q *queries) FindByID(ctx context.Context, id int64) (*User, error) { ... }
 
 - SELECT / INSERT / UPDATE / DELETE
 - 子查询、IN、EXISTS、BETWEEN
+- 数组成员 `= ANY(@arr)`（数组参数唯一写法）
 - JOIN（INNER / LEFT / RIGHT / CROSS）
 - GROUP BY / HAVING / ORDER BY / LIMIT / OFFSET
 - INSERT ... ON CONFLICT (DO UPDATE / DO NOTHING) — 跨方言翻译
@@ -297,8 +299,8 @@ cd integration-test/integration && go test -count=1 -timeout 180s
 
 - [DSL 规范](docs/DSL-SPEC.md)
 - [方言差异](docs/DIALECTS.md)
-- [执行器设计](docs/DESIGN-RUNNER.md)
-- [RETURNING 设计](docs/DESIGN-RETURNING.md)
+- [Java 代码生成设计](docs/DESIGN-JAVA.md)
+- [数组参数跨方言设计](docs/design/array-params.md)
 - [引擎实现：PG](docs/engine-pg.md)
 - [引擎实现：MSSQL](docs/engine-mssql.md)
 - [引擎实现：Oracle](docs/engine-oracle.md)
