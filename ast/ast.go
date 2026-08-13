@@ -145,6 +145,7 @@ const (
 	ExprNotNull                   // x IS NOT NULL
 	ExprExists                    // EXISTS (subquery)
 	ExprStar                      // *
+	ExprAny                       // x = ANY(@arr) — array membership (DSL sugar)
 )
 
 // Expr is an expression node.
@@ -166,6 +167,7 @@ const (
 //	ExprNotNull:  Left
 //	ExprExists:   Stmt
 //	ExprStar:     (none)
+//	ExprAny:      Left (value being tested), Right (array param expr)
 type Expr struct {
 	Kind ExprKind
 
@@ -298,6 +300,12 @@ func In(x Expr, items ...Expr) *Expr {
 // InSubquery creates an x IN (subquery) expression.
 func InSubquery(x Expr, sub *SelectStmt) *Expr {
 	return &Expr{Kind: ExprIn, Left: &x, Stmt: sub}
+}
+
+// Any creates an x = ANY(array) array-membership expression.
+// left is the value being tested (e.g. a column), right is the array param expr.
+func Any(left, right Expr) *Expr {
+	return &Expr{Kind: ExprAny, Left: &left, Right: &right}
 }
 
 // Between creates an x BETWEEN low AND high expression.

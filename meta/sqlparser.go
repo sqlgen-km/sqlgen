@@ -336,6 +336,17 @@ func mapAndOr(left, right sqlparser.Expr, op string) ast.Expr {
 func mapComparison(c *sqlparser.ComparisonExpr) ast.Expr {
 	left := mapExpr(c.Left)
 
+	// Array membership marker: `= __sqlgen_any__(@arr)` (rewritten from `= ANY(@arr)`).
+	if fe, ok := c.Right.(*sqlparser.FuncExpr); ok && fe.Name.String() == "__sqlgen_any__" {
+		var arg ast.Expr
+		if len(fe.Exprs) > 0 {
+			arg = mapExpr(fe.Exprs[0])
+		} else {
+			arg = ast.Expr{Kind: ast.ExprParam, Param: "_"}
+		}
+		return ast.Expr{Kind: ast.ExprAny, Left: &left, Right: &arg}
+	}
+
 	// Handle IN / NOT IN
 	if c.Operator == sqlparser.InOp || c.Operator == sqlparser.NotInOp {
 		switch right := c.Right.(type) {

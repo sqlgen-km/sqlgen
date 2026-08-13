@@ -300,6 +300,8 @@ func (r *renderer) renderExpr(e Expr) {
 			r.renderExprs(e.Items)
 		}
 		r.b.WriteByte(')')
+	case ExprAny:
+		r.renderAny(e)
 	case ExprIsNull:
 		r.renderExpr(*e.Left)
 		r.b.WriteString(" IS NULL")
@@ -312,6 +314,37 @@ func (r *renderer) renderExpr(e Expr) {
 		r.b.WriteByte(')')
 	case ExprStar:
 		r.b.WriteByte('*')
+	}
+}
+
+// renderAny renders the `= ANY(@arr)` array-membership expression per dialect.
+// The ExprAny node carries Left (the value being tested) and Right (the array param).
+func (r *renderer) renderAny(e Expr) {
+	switch r.d.name {
+	case "postgres":
+		// id = ANY($1)
+		r.renderExpr(*e.Left)
+		r.b.WriteString(" = ANY(")
+		r.b.WriteString(r.nextParam())
+		r.b.WriteByte(')')
+	case "mysql":
+		// JSON_CONTAINS(?, CAST(id AS JSON))
+		r.b.WriteString("JSON_CONTAINS(")
+		r.b.WriteString(r.nextParam())
+		r.b.WriteString(", CAST(")
+		r.renderExpr(*e.Left)
+		r.b.WriteString(" AS JSON))")
+	case "oracle":
+		// id MEMBER OF :1
+		r.renderExpr(*e.Left)
+		r.b.WriteString(" MEMBER OF ")
+		r.b.WriteString(r.nextParam())
+	case "sqlserver":
+		// id IN (SELECT value FROM OPENJSON(@p1))
+		r.renderExpr(*e.Left)
+		r.b.WriteString(" IN (SELECT value FROM OPENJSON(")
+		r.b.WriteString(r.nextParam())
+		r.b.WriteString("))")
 	}
 }
 

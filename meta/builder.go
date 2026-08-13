@@ -83,7 +83,10 @@ func CollectModels(files []ParsedFile) map[string]ModelDef {
 
 // BuildQuery preprocesses and parses a query.
 func BuildQuery(q QueryDef) (QueryBuilt, error) {
-	prep := PreprocessSQL(q.SQL)
+	prep, err := PreprocessSQL(q.SQL)
+	if err != nil {
+		return QueryBuilt{}, fmt.Errorf("query %q: %w", q.Name, err)
+	}
 
 	stmt, err := ParseSQLStmt(prep.CleanedSQL)
 	if err != nil {
@@ -581,6 +584,8 @@ func formatExpr(e ast.Expr) string {
 			items[i] = formatExpr(item)
 		}
 		return fmt.Sprintf("*ast.In(%s, %s)", formatExpr(*e.Left), strings.Join(items, ", "))
+	case ast.ExprAny:
+		return fmt.Sprintf("*ast.Any(%s, %s)", formatExpr(*e.Left), formatExpr(*e.Right))
 	case ast.ExprBetween:
 		return fmt.Sprintf("*ast.Between(%s, %s, %s)",
 			formatExpr(*e.Left), formatExpr(*e.Low), formatExpr(*e.High))

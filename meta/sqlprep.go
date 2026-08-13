@@ -1,6 +1,7 @@
 package meta
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -16,15 +17,20 @@ type SQLPrep struct {
 }
 
 // PreprocessSQL extracts RETURNING/ON CONFLICT, replaces @param references and ILIKE.
-func PreprocessSQL(rawSQL string) *SQLPrep {
+func PreprocessSQL(rawSQL string) (*SQLPrep, error) {
 	p := &SQLPrep{}
 	sql := strings.TrimSpace(rawSQL)
 	sql = p.extractReturning(sql)
 	sql = p.extractOnConflict(sql)
 	sql = p.replaceILIKE(sql)
+	var err error
+	sql, err = p.replaceAnyMembership(sql)
+	if err != nil {
+		return nil, err
+	}
 	sql = p.replaceParams(sql)
 	p.CleanedSQL = sql
-	return p
+	return p, nil
 }
 
 var returningRe = regexp.MustCompile(`(?i)\s+RETURNING\s+(\*|(?:\w+\s*,\s*)*\w+)\s*$`)
@@ -78,6 +84,23 @@ func (p *SQLPrep) extractOnConflict(sql string) string {
 var paramRe = regexp.MustCompile(`@(\w+(?:\.\w+)?)`)
 
 var ilikeRe = regexp.MustCompile(`(?i)\s+ILIKE\s+`)
+
+// anyMembershipRe matches `= ANY(@arr)` (array membership DSL sugar).
+var anyMembershipRe = regexp.MustCompile(`(?i)=\s*ANY\s*\(\s*@(\w+)\s*\)`)
+
+// inSingleParamRe matches the invalid `IN (@x)` single-param form.
+var inSingleParamRe = regexp.MustCompile(`(?i)\bIN\s*\(\s*@(\w+)\s*\)`)
+
+// replaceAnyMembership rewrites `= ANY(@arr)` into the vitess-parseable marker
+// `= __sqlgen_any__(@arr)`, and rejects the invalid single-param `IN (@x)` form.
+// Array membership must be written as `= ANY(@arr)`; `IN (@x)` is an error regardless
+// of whether @x is an array (IN is never used for array params).
+func (p *SQLPrep) replaceAnyMembership(sql string) (string, error) {
+	if m := inSingleParamRe.FindStringSubmatch(sql); m != nil {
+		return "", fmt.Errorf("IN 子句不能含单个参数 @%s：数组成员请用 = ANY(@%s)，标量请用 = @%s", m[1], m[1], m[1])
+	}
+	return anyMembershipRe.ReplaceAllString(sql, "= __sqlgen_any__(@${1})"), nil
+}
 
 func (p *SQLPrep) replaceILIKE(sql string) string {
 	result := ilikeRe.ReplaceAllString(sql, " LIKE ")
