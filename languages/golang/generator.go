@@ -759,7 +759,18 @@ func (g *Generator) writeEngineFile(fb *fileBuilt, engName string) error {
 		}
 	}
 	if needsTime {
-		b.WriteString("\t\"time\"\n")
+		b.WriteString("	\"time\"\n")
+	}
+	// Array params need a dialect-specific import for binding
+	if needsArrayImport(fb) {
+		switch engName {
+		case "pg":
+			b.WriteString("	\"github.com/lib/pq\"\n")
+		case "mysql", "mssql":
+			b.WriteString("	\"encoding/json\"\n")
+		case "oracle":
+			b.WriteString("	go_ora \"github.com/sijms/go-ora/v2\"\n")
+		}
 	}
 	b.WriteString(")\n\n")
 
@@ -785,6 +796,19 @@ func (g *Generator) writeEngineFile(fb *fileBuilt, engName string) error {
 	b.WriteString("\n")
 
 	return os.WriteFile(path, []byte(b.String()), 0644)
+}
+
+// needsArrayImport reports whether any query in the file has a non-[]byte slice
+// param (which needs a dialect-specific import for array binding).
+func needsArrayImport(fb *fileBuilt) bool {
+	for _, qb := range fb.queries {
+		for _, p := range qb.Q.Params {
+			if engines.IsSliceParam(p.Type) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // runnerParamSignature builds a comma-separated typed parameter list for runner method signatures.

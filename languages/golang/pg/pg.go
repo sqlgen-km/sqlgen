@@ -63,7 +63,9 @@ func (g *Generator) writeRunner(b *strings.Builder, spec engines.RunnerSpec, sql
 	constName := spec.Name + "Const" + suffix
 	runnerType := lowerFirst(spec.Query) + "Runner"
 	sig := spec.ParamSignature()
-	names := spec.ParamNames()
+	names := spec.ParamArgs(func(p engines.RunnerParam) string {
+		return "pq.Array(" + p.Name + ")"
+	})
 
 	fmt.Fprintf(b, "const %s = `%s`\n\n", constName, sql)
 	fmt.Fprintf(b, "type %s struct {\n	stmt *sql.Stmt\n	db   *sql.DB\n}\n\n", spec.Name+suffix)

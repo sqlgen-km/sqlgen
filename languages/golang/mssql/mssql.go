@@ -9,7 +9,10 @@ import (
 	"github.com/sqlgen-km/sqlgen/engines"
 )
 
-type Generator struct{ d *ast.Dialect }
+type Generator struct {
+	d         *ast.Dialect
+	arrayWrap func(engines.RunnerParam) string // per-file array arg encoder
+}
 
 func New() Generator { return Generator{d: ast.MSSQL} }
 
@@ -22,12 +25,19 @@ const dialectSuffixMSSQL = "MSSQL"
 func (g *Generator) GenFile(stem string, specs []engines.RunnerSpec) string {
 	var b strings.Builder
 
+	camelStem := toCamel(stem)
+	if engines.HasSliceParam(specs) {
+		helper := camelStem + "ArrayJSON" + dialectSuffixMSSQL
+		g.arrayWrap = func(p engines.RunnerParam) string { return helper + "(" + p.Name + ")" }
+	} else {
+		g.arrayWrap = nil
+	}
+
 	for _, spec := range specs {
 		sql := g.renderSQL(spec)
 		g.writeRunner(&b, spec, sql, dialectSuffixMSSQL)
 	}
 
-	camelStem := toCamel(stem)
 	b.WriteString("\ntype ")
 	b.WriteString(camelStem)
 	b.WriteString("RunnerFactoryMSSQL struct {}\n\n")
@@ -46,6 +56,15 @@ func (g *Generator) GenFile(stem string, specs []engines.RunnerSpec) string {
 		b.WriteString("{db: db} }\n")
 	}
 	b.WriteString("\n")
+
+	if g.arrayWrap != nil {
+		fmt.Fprintf(&b, "// %sArrayJSON%s marshals a slice into a JSON array string for MSSQL OPENJSON.\n", camelStem, dialectSuffixMSSQL)
+		fmt.Fprintf(&b, "func %sArrayJSON%s(v interface{}) string {\n", camelStem, dialectSuffixMSSQL)
+		b.WriteString("	b, err := json.Marshal(v)\n")
+		b.WriteString("	if err != nil {\n		return \"[]\"\n	}\n")
+		b.WriteString("	return string(b)\n")
+		b.WriteString("}\n\n")
+	}
 
 	return b.String()
 }
@@ -234,11 +253,20 @@ func mssqlConvertILIKE(sql string) string {
 // Runner helpers
 // ---------------------------------------------------------------------------
 
+// arrayArgs returns the runner call args, wrapping slice params with the
+// dialect-specific array encoder.
+func (g *Generator) arrayArgs(spec engines.RunnerSpec) string {
+	if g.arrayWrap == nil {
+		return spec.ParamNames()
+	}
+	return spec.ParamArgs(g.arrayWrap)
+}
+
 func (g *Generator) writeRunner(b *strings.Builder, spec engines.RunnerSpec, sql, suffix string) {
 	constName := spec.Name + "Const" + suffix
 	runnerType := lowerFirst(spec.Query) + "Runner"
 	sig := spec.ParamSignature()
-	names := spec.ParamNames()
+	names := g.arrayArgs(spec)
 
 	fmt.Fprintf(b, "const %s = `%s`\n\n", constName, sql)
 	fmt.Fprintf(b, "type %s struct {\n	stmt *sql.Stmt\n	db   *sql.DB\n}\n\n", spec.Name+suffix)

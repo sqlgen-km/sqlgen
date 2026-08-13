@@ -149,3 +149,36 @@ func (s RunnerSpec) ParamNames() string {
 	}
 	return b.String()
 }
+
+// IsSliceParam reports whether the Go type is a slice other than []byte — i.e. an
+// array that needs dialect-specific encoding/binding ([]int64, []string, ...).
+func IsSliceParam(goType string) bool {
+	return strings.HasPrefix(goType, "[]") && goType != "[]byte"
+}
+
+// HasSliceParam reports whether any spec has a non-[]byte slice parameter.
+func HasSliceParam(specs []RunnerSpec) bool {
+	for _, s := range specs {
+		for _, p := range s.Params {
+			if IsSliceParam(p.Type) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ParamArgs returns the runner call argument list, applying fn to slice params
+// (non-[]byte) for dialect-specific array encoding.
+func (s RunnerSpec) ParamArgs(fn func(RunnerParam) string) string {
+	var b strings.Builder
+	for _, p := range s.Params {
+		b.WriteString(", ")
+		if IsSliceParam(p.Type) {
+			b.WriteString(fn(p))
+		} else {
+			b.WriteString(p.Name)
+		}
+	}
+	return b.String()
+}

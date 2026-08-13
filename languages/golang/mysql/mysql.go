@@ -9,7 +9,10 @@ import (
 	"github.com/sqlgen-km/sqlgen/engines"
 )
 
-type Generator struct{ d *ast.Dialect }
+type Generator struct {
+	d          *ast.Dialect
+	arrayWrap  func(engines.RunnerParam) string // per-file array arg encoder
+}
 
 func New() Generator { return Generator{d: ast.MySQL} }
 
@@ -22,12 +25,19 @@ const dialectSuffixMySQL = "MySQL"
 func (g *Generator) GenFile(stem string, specs []engines.RunnerSpec) string {
 	var b strings.Builder
 
+	camelStem := toCamel(stem)
+	if engines.HasSliceParam(specs) {
+		helper := camelStem + "ArrayJSON" + dialectSuffixMySQL
+		g.arrayWrap = func(p engines.RunnerParam) string { return helper + "(" + p.Name + ")" }
+	} else {
+		g.arrayWrap = nil
+	}
+
 	for _, spec := range specs {
 		sql := g.renderSQL(spec)
 		g.writeRunner(&b, spec, sql, dialectSuffixMySQL)
 	}
 
-	camelStem := toCamel(stem)
 	b.WriteString("\ntype ")
 	b.WriteString(camelStem)
 	b.WriteString("RunnerFactoryMySQL struct {}\n\n")
@@ -46,6 +56,15 @@ func (g *Generator) GenFile(stem string, specs []engines.RunnerSpec) string {
 		b.WriteString("{db: db} }\n")
 	}
 	b.WriteString("\n")
+
+	if g.arrayWrap != nil {
+		fmt.Fprintf(&b, "// %sArrayJSON%s marshals a slice into a JSON array string for MySQL JSON_CONTAINS.\n", camelStem, dialectSuffixMySQL)
+		fmt.Fprintf(&b, "func %sArrayJSON%s(v interface{}) string {\n", camelStem, dialectSuffixMySQL)
+		b.WriteString("	b, err := json.Marshal(v)\n")
+		b.WriteString("	if err != nil {\n		return \"[]\"\n	}\n")
+		b.WriteString("	return string(b)\n")
+		b.WriteString("}\n\n")
+	}
 
 	return b.String()
 }
@@ -143,12 +162,21 @@ var coalesceRe = regexp.MustCompile(`(?i)coalesce\(([^,]+),([^)]+)\)`)
 func convertCoalesce(sql string) string {
 	return coalesceRe.ReplaceAllString(sql, "IFNULL($1,$2)")
 }
+// arrayArgs returns the runner call args, wrapping slice params with the
+// dialect-specific array encoder.
+func (g *Generator) arrayArgs(spec engines.RunnerSpec) string {
+	if g.arrayWrap == nil {
+		return spec.ParamNames()
+	}
+	return spec.ParamArgs(g.arrayWrap)
+}
+
 // writeRunner generates the runner struct and methods for a spec.
 func (g *Generator) writeRunner(b *strings.Builder, spec engines.RunnerSpec, sql, suffix string) {
 	constName := spec.Name + "Const" + suffix
 	runnerType := lowerFirst(spec.Query) + "Runner"
 	sig := spec.ParamSignature()
-	names := spec.ParamNames()
+	names := g.arrayArgs(spec)
 
 	// RETURNING scalar: multi-step execution for INSERT, plain exec fallback for UPDATE/DELETE.
 	if spec.Kind == engines.RunnerReturningScalar {
@@ -223,7 +251,7 @@ func (g *Generator) writeReturningRunner(b *strings.Builder, spec engines.Runner
 	runnerType := lowerFirst(spec.Query) + "Runner"
 	selectSQL := "SELECT LAST_INSERT_ID()"
 	sig := spec.ParamSignature()
-	names := spec.ParamNames()
+	names := g.arrayArgs(spec)
 
 	fmt.Fprintf(b, "const %s = %s\n\n", constName, engines.GoString(sql))
 	fmt.Fprintf(b, "const %s = %s\n\n", selectConstName, engines.GoString(selectSQL))

@@ -9,7 +9,10 @@ import (
 	"github.com/sqlgen-km/sqlgen/engines"
 )
 
-type Generator struct{ d *ast.Dialect }
+type Generator struct {
+	d         *ast.Dialect
+	arrayWrap func(engines.RunnerParam) string // per-file array arg encoder
+}
 
 func New() Generator { return Generator{d: ast.Ora} }
 
@@ -22,6 +25,14 @@ const dialectSuffixOracle = "Oracle"
 // GenFile generates the complete engine file content (factory + all runners + SQL constants).
 func (g *Generator) GenFile(stem string, specs []engines.RunnerSpec) string {
 	var b strings.Builder
+
+	if engines.HasSliceParam(specs) {
+		g.arrayWrap = func(p engines.RunnerParam) string {
+			return "go_ora.Object{Owner: \"SYS\", Name: \"" + oracleArrayType(p.Type) + "\", Value: " + p.Name + "}"
+		}
+	} else {
+		g.arrayWrap = nil
+	}
 
 	for _, spec := range specs {
 		sql := g.renderSQL(spec)
@@ -351,19 +362,47 @@ func needsOffsetSwap(spec engines.RunnerSpec) bool {
 	return sel.Limit.Offset.Kind != 0
 }
 
-// namesWithSwap returns param names with last two swapped for Oracle OFFSET.
-func namesWithSwap(spec engines.RunnerSpec) string {
+// oracleArrayType maps a Go slice type to an Oracle collection type name
+// (schema SYS built-in nested tables).
+func oracleArrayType(goType string) string {
+	switch goType {
+	case "[]string":
+		return "ODCIVARCHAR2LIST"
+	default: // []int64, []int32, []float64, ...
+		return "ODCINUMBERLIST"
+	}
+}
+
+// arrayArgs returns the runner call args, wrapping slice params with go_ora.Object.
+func (g *Generator) arrayArgs(spec engines.RunnerSpec) string {
+	if g.arrayWrap == nil {
+		return spec.ParamNames()
+	}
+	return spec.ParamArgs(g.arrayWrap)
+}
+
+// wrapArg wraps a single array param, leaving scalar params unchanged.
+func (g *Generator) wrapArg(p engines.RunnerParam) string {
+	if g.arrayWrap != nil && engines.IsSliceParam(p.Type) {
+		return g.arrayWrap(p)
+	}
+	return p.Name
+}
+
+// namesWithSwap returns param names with last two swapped for Oracle OFFSET,
+// applying the array arg wrap to slice params.
+func (g *Generator) namesWithSwap(spec engines.RunnerSpec) string {
 	params := spec.Params
 	if len(params) < 2 {
-		return spec.ParamNames()
+		return g.arrayArgs(spec)
 	}
 	// Build comma-separated names with last two swapped
 	var parts []string
 	for i := 0; i < len(params)-2; i++ {
-		parts = append(parts, ", "+params[i].Name)
+		parts = append(parts, ", "+g.wrapArg(params[i]))
 	}
-	parts = append(parts, ", "+params[len(params)-1].Name)  // offset (was last)
-	parts = append(parts, ", "+params[len(params)-2].Name)  // limit (was second-to-last)
+	parts = append(parts, ", "+g.wrapArg(params[len(params)-1])) // offset (was last)
+	parts = append(parts, ", "+g.wrapArg(params[len(params)-2])) // limit (was second-to-last)
 	return strings.Join(parts, "")
 }
 
@@ -434,7 +473,7 @@ func (g *Generator) writeRunner(b *strings.Builder, spec engines.RunnerSpec, sql
 	constName := spec.Name + "Const" + suffix
 	runnerType := lowerFirst(spec.Query) + "Runner"
 	sig := spec.ParamSignature()
-	names := spec.ParamNames()
+	names := g.arrayArgs(spec)
 
 	fmt.Fprintf(b, "const %s = `%s`\n\n", constName, sql)
 	fmt.Fprintf(b, "type %s struct {\n	stmt *sql.Stmt\n	db   *sql.DB\n}\n\n", spec.Name+suffix)
@@ -461,7 +500,7 @@ func (r *%[1]s) withTx(tx *sql.Tx) %[2]s { return &%[1]s{stmt: tx.Stmt(r.stmt)} 
 	return r.stmt.QueryContext(ctx%[4]s)
 }
 %[5]s
-`, spec.Name+suffix, sig, constName, namesWithSwap(spec), closeAndTx)
+`, spec.Name+suffix, sig, constName, g.namesWithSwap(spec), closeAndTx)
 		} else {
 			fmt.Fprintf(b, `func (r *%[1]s) query(ctx context.Context%[2]s) (*sql.Rows, error) {
 	if r.stmt == nil { var err error; r.stmt, err = r.db.PrepareContext(ctx, %[3]s); if err != nil { return nil, err } }
