@@ -2,5 +2,6 @@
 *.test
 *.out
 vendor/
+target/
 sqlgen
 /sql-generator
