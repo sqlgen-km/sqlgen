@@ -7,7 +7,7 @@ import (
 	go_ora "github.com/sijms/go-ora/v2"
 )
 
-const findGroupNamesByIDsConstOracle = `SELECT id, name FROM groups WHERE id MEMBER OF :1`
+const findGroupNamesByIDsConstOracle = `SELECT id, name FROM groups WHERE id IN (SELECT COLUMN_VALUE FROM TABLE(:1))`
 
 type findGroupNamesByIDsOracle struct {
 	stmt *sql.Stmt
@@ -22,7 +22,7 @@ func (r *findGroupNamesByIDsOracle) query(ctx context.Context, group_ids []int64
 func (r *findGroupNamesByIDsOracle) close() error { if r.stmt != nil { return r.stmt.Close() }; return nil }
 func (r *findGroupNamesByIDsOracle) withTx(tx *sql.Tx) findGroupNamesByIDsRunner { return &findGroupNamesByIDsOracle{stmt: tx.Stmt(r.stmt)} }
 
-const findMetadataByNamesConstOracle = `SELECT system_id, table_name FROM metadata WHERE table_name MEMBER OF :1`
+const findMetadataByNamesConstOracle = `SELECT system_id, table_name FROM metadata WHERE table_name IN (SELECT COLUMN_VALUE FROM TABLE(:1))`
 
 type findMetadataByNamesOracle struct {
 	stmt *sql.Stmt

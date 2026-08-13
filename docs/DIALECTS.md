@@ -171,16 +171,18 @@ MySQL:  UPDATE users SET is_active = TRUE
 | 场景 | PG | MSSQL | Oracle | MySQL |
 |------|-----|-------|--------|-------|
 | 列类型 | `TEXT[]` / `INT[]` | 无原生数组 | `VARRAY` / 嵌套表 | `JSON` |
-| IN 查询 | `ANY(@arr)` | `IN (SELECT value FROM OPENJSON(...))` | `MEMBER OF` | `JSON_CONTAINS` |
+| IN 查询 | `ANY(@arr)` | `IN (SELECT value FROM OPENJSON(...))` | `IN (SELECT COLUMN_VALUE FROM TABLE(...))` | `JSON_CONTAINS` |
 
 ```
 PG:     WHERE id = ANY(@ids)
 MSSQL:  WHERE id IN (SELECT value FROM OPENJSON(@ids))
-Oracle: WHERE id MEMBER OF @ids
+Oracle: WHERE id IN (SELECT COLUMN_VALUE FROM TABLE(@ids))
 MySQL:  WHERE JSON_CONTAINS(@ids, CAST(id AS JSON))
 ```
 
 当前 DSL 中数组参数 (`[]int64`, `[]string`) 主要面向 PG 的 `ANY(@arr)` 模式。
+Oracle 用 `TABLE()` 反嵌套而非 `MEMBER OF`：`SYS.ODCINUMBERLIST`/`ODCIVARCHAR2LIST` 是 VARRAY，
+`MEMBER OF` 只认嵌套表（实测 ORA-00932），`TABLE()` 对 VARRAY/嵌套表都成立。
 
 ## 15. NULL 排序
 

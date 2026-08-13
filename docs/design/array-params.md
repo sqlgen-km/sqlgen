@@ -16,8 +16,10 @@ DSL 中数组参数（`[]int64`/`[]string`）当前被翻译成 Java 数组（`l
 
 1. **`= ANY(@arr)` 是 DSL 语法糖**，表达「数组成员」语义。
 2. **四方言签名统一**（参数类型一致），**实现各自特化**（SQL + 绑定各自实现，不强求一致）。
-3. **PG 走原生** `= ANY($1)`；MySQL/Oracle/MSSQL 各自特化（MySQL `JSON_CONTAINS`、Oracle `MEMBER OF`、
+3. **PG 走原生** `= ANY($1)`；MySQL/Oracle/MSSQL 各自特化（MySQL `JSON_CONTAINS`、Oracle `TABLE()` 反嵌套、
    MSSQL `OPENJSON`）。MSSQL 从 §14 的 `STRING_SPLIT` 改为 `OPENJSON`（空数组正确性，见「空数组语义」）。
+   Oracle 从 `MEMBER OF` 改为 `TABLE()`：`SYS.ODCINUMBERLIST`/`ODCIVARCHAR2LIST` 是 **VARRAY**，
+   `MEMBER OF` 只认嵌套表，实测 `ORA-00932`；`IN (SELECT COLUMN_VALUE FROM TABLE(:1))` 对 VARRAY/嵌套表都成立。
 4. **Go 引擎与 Java 引擎都要实现**（sqlgen 两侧均维护；停维的是 datacenter 的 Go 端）。
 5. 数组列值（`operations []string`）同样签名统一 + 各自实现，不降级为 string。
 6. **方言特化 = 各自技术栈**：PG 用 `java.sql.Array`/`pq.Array`，MySQL/MSSQL 用 JSON（Jackson），
@@ -68,7 +70,7 @@ INSERT INTO services_table (operations) VALUES (@operations)
 |------|-----|----------|--------|
 | PG | `id = ANY($1)` | `long[]` → `java.sql.Array`（`createArrayOf`）| `pq.Array(ids)` / pgx 原生 slice |
 | MySQL | `JSON_CONTAINS(?, CAST(id AS JSON))` | `long[]` → JSON 字符串 | JSON 字符串 |
-| Oracle | `id MEMBER OF :1` | `long[]` → `oracle.sql.ARRAY`（`SYS.ODCINUMBERLIST`）| go-ora 集合 |
+| Oracle | `id IN (SELECT COLUMN_VALUE FROM TABLE(:1))` | `long[]` → `oracle.sql.ARRAY`（`SYS.ODCINUMBERLIST`）| go-ora 集合 |
 | MSSQL | `id IN (SELECT value FROM OPENJSON(@p1))` | `long[]` → JSON 数组字符串（Jackson，与 MySQL 同）| JSON 数组字符串 |
 
 `[]string` 同构，仅类型名不同（PG `text[]`、Oracle `SYS.ODCIVARCHAR2LIST`、MySQL/MSSQL JSON 字符串）。
@@ -95,12 +97,17 @@ INSERT INTO services_table (operations) VALUES (@operations)
 |------|-----------|------|
 | PG | `= ANY('{}')` | 空集 ✓ |
 | MySQL | `JSON_CONTAINS('[]', CAST(id AS JSON))` | 空集 ✓ |
-| Oracle | `id MEMBER OF 空集合` | FALSE ✓ |
+| Oracle | `id IN (SELECT COLUMN_VALUE FROM TABLE(空集合))` | 见下注 ✓ |
 | MSSQL | `id IN (SELECT value FROM OPENJSON('[]'))` | 空集 ✓ |
 
 MSSQL 因此从 §14 的 `STRING_SPLIT` 改用 `OPENJSON`：`STRING_SPLIT('')` 会返回一个空串行
 （`id IN ('')` 类型转换错配），而 `OPENJSON('[]')` 对空数组返回 0 行，天然正确。
 MSSQL 与 MySQL 统一走 Jackson JSON 序列化，TypeHandler 可复用。
+
+**Oracle 空集合绑定坑（实测）**：go-ora v2.9.0 绑定空/`nil` 集合会触发
+`ORA-00600: [kokbgc2ip1]`（客户端序列化缺陷，非 Oracle 服务端问题——Java ojdbc 绑定空 ARRAY 正常返回 0 行）。
+因此 **Go 引擎在框架方法里对空数组做短路**（`if len(arr) == 0 { return nil, nil }`），
+不进入 DB 层；Java 侧 TypeHandler `createARRAY` 空数组经实测正常，无需短路。
 
 注：若未来需要「空数组 = 报错」，在 TypeHandler `setNonNullParameter` 里检查 `length==0` 抛异常即可
 （Go 在 runner 里 `len==0` 检查），四方言统一，属一行改动。

@@ -335,10 +335,13 @@ func (r *renderer) renderAny(e Expr) {
 		r.renderExpr(*e.Left)
 		r.b.WriteString(" AS JSON))")
 	case "oracle":
-		// id MEMBER OF :1
+		// id IN (SELECT COLUMN_VALUE FROM TABLE(:1))
+		// TABLE() unnesting works with the built-in SYS.ODCINUMBERLIST/ODCIVARCHAR2LIST
+		// VARRAYs; MEMBER OF does NOT (ORA-00932: inconsistent datatypes).
 		r.renderExpr(*e.Left)
-		r.b.WriteString(" MEMBER OF ")
+		r.b.WriteString(" IN (SELECT COLUMN_VALUE FROM TABLE(")
 		r.b.WriteString(r.nextParam())
+		r.b.WriteString("))")
 	case "sqlserver":
 		// id IN (SELECT value FROM OPENJSON(@p1))
 		r.renderExpr(*e.Left)

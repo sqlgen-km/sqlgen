@@ -82,6 +82,9 @@ func New(db *sql.DB, driver string) (ArrQuerier, error) {
 // ── 公共方法 ──
 
 func (q *arrQueries) FindGroupNamesByIDs(ctx context.Context, group_ids []int64) ([]*FindGroupNamesByIDs, error) {
+	if len(group_ids) == 0 {
+		return nil, nil
+	}
 	rows, err := q.findGroupNamesByIDs.query(ctx, group_ids)
 	if err != nil { return nil, err }
 	defer rows.Close()
@@ -97,6 +100,9 @@ func (q *arrQueries) FindGroupNamesByIDs(ctx context.Context, group_ids []int64)
 }
 
 func (q *arrQueries) FindMetadataByNames(ctx context.Context, table_names []string) ([]*FindMetadataByNames, error) {
+	if len(table_names) == 0 {
+		return nil, nil
+	}
 	rows, err := q.findMetadataByNames.query(ctx, table_names)
 	if err != nil { return nil, err }
 	defer rows.Close()

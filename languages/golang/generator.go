@@ -403,6 +403,18 @@ func (g *Generator) writeFrameworkFile(fb *fileBuilt) error {
 	return os.WriteFile(path, []byte(b.String()), 0644)
 }
 
+// arrayParamNames returns the names of the direct array params (non-[]byte)
+// of a query, in declaration order.
+func arrayParamNames(q meta.QueryDef) []string {
+	var names []string
+	for _, p := range q.Params {
+		if engines.IsSliceParam(p.Type) {
+			names = append(names, p.Name)
+		}
+	}
+	return names
+}
+
 // writeFrameworkMethod writes a single public method for the framework file.
 func (g *Generator) writeFrameworkMethod(b *strings.Builder, qb queryBuilt, camelName, querierName string) {
 	q := qb.Q
@@ -423,6 +435,26 @@ func (g *Generator) writeFrameworkMethod(b *strings.Builder, qb queryBuilt, came
 	b.WriteString(") (")
 	g.writeReturnType(b, qb)
 	b.WriteString(") {\n")
+
+	// Empty-array short-circuit: a membership query over an empty array must
+	// return an empty result (design semantics B). Required for Oracle where the
+	// go-ora driver cannot bind an empty collection (ORA-00600 kokbgc2ip1); a
+	// no-op optimization for the other dialects.
+	if kind == engines.RunnerQueryOne || kind == engines.RunnerQueryMany {
+		if arrs := arrayParamNames(q); len(arrs) > 0 {
+			var conds []string
+			for _, n := range arrs {
+				conds = append(conds, "len("+n+") == 0")
+			}
+			zero := "nil"
+			if kind == engines.RunnerQueryOne && q.IsScalar {
+				zero = meta.ScalarZero(q.Return)
+			}
+			b.WriteString("	if " + strings.Join(conds, " || ") + " {\n")
+			b.WriteString("		return " + zero + ", nil\n")
+			b.WriteString("	}\n")
+		}
+	}
 
 	switch kind {
 	case engines.RunnerExec:

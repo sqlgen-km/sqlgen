@@ -17,11 +17,11 @@ import org.springframework.context.annotation.Profile;
 public interface ArrMapperOracle extends ArrMapper {
 
     @Override
-    @Select("SELECT id, name FROM groups WHERE id MEMBER OF #{group_ids, typeHandler=com.example.mapper.arr.LongArrayTypeHandlerOracle}")
+    @Select("SELECT id, name FROM groups WHERE id IN (SELECT COLUMN_VALUE FROM TABLE(#{group_ids, typeHandler=com.example.mapper.arr.LongArrayTypeHandlerOracle}))")
     List<FindGroupNamesByIDs> findGroupNamesByIDs(@Param("group_ids") long[] group_ids);
 
     @Override
-    @Select("SELECT system_id, table_name FROM metadata WHERE table_name MEMBER OF #{table_names, typeHandler=com.example.mapper.arr.StringArrayTypeHandlerOracle}")
+    @Select("SELECT system_id, table_name FROM metadata WHERE table_name IN (SELECT COLUMN_VALUE FROM TABLE(#{table_names, typeHandler=com.example.mapper.arr.StringArrayTypeHandlerOracle}))")
     List<FindMetadataByNames> findMetadataByNames(@Param("table_names") String[] table_names);
 
     @Override
