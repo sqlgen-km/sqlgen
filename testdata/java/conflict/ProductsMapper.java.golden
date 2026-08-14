@@ -11,8 +11,6 @@ import org.springframework.context.annotation.Profile;
 
 /** Shared Mapper interface. */
 public interface ProductsMapper {
-
     void upsertProduct(@Param("sku") String sku, @Param("name") String name, @Param("price") java.math.BigDecimal price);
-
     void upsertIgnore(@Param("sku") String sku, @Param("name") String name);
 }

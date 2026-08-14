@@ -15,11 +15,13 @@ import org.springframework.context.annotation.Profile;
 /** Shared Mapper interface. */
 public interface ArrMapper {
 
+    @Select("SELECT id, name FROM groups WHERE id = ANY(#{group_ids})")
     List<FindGroupNamesByIDs> findGroupNamesByIDs(@Param("group_ids") long[] group_ids);
 
+    @Select("SELECT system_id, table_name FROM metadata WHERE table_name = ANY(#{table_names})")
     List<FindMetadataByNames> findMetadataByNames(@Param("table_names") String[] table_names);
-
     void insertServicesTable(InsertServicesTableParams params);
 
+    @Select("SELECT id, table_name, operations FROM services_table WHERE id = #{id}")
     ServicesTable findServicesTableByID(@Param("id") long id);
 }

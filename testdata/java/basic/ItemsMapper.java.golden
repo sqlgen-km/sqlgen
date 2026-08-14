@@ -14,15 +14,15 @@ import org.springframework.context.annotation.Profile;
 /** Shared Mapper interface. */
 public interface ItemsMapper {
 
+    @Select("SELECT id, name, price, stock FROM items WHERE id = #{id}")
     Item findByID(@Param("id") long id);
 
+    @Select("SELECT id, name, price, stock FROM items ORDER BY id")
     List<Item> findAll();
 
+    @Select("SELECT count(*) FROM items")
     long countItems();
-
     void insertItem(InsertItemParams params);
-
     long updateItem(@Param("name") String name, @Param("price") java.math.BigDecimal price, @Param("id") long id);
-
     void deleteItem(@Param("id") long id);
 }

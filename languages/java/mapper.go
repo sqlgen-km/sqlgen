@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/sqlgen-km/sqlgen/ast"
 	"github.com/sqlgen-km/sqlgen/engines"
 )
 
-// GenSharedMapper generates the shared mapper interface (no annotations, just signatures).
+// GenSharedMapper generates the shared mapper interface with @Select annotations
+// for SELECT queries using PG SQL as reference.
 func GenSharedMapper(mapperName string, specs []engines.RunnerSpec, modelType string) string {
 	var b strings.Builder
 
@@ -17,7 +19,24 @@ func GenSharedMapper(mapperName string, specs []engines.RunnerSpec, modelType st
 	b.WriteString(" {\n")
 
 	for _, spec := range specs {
-		b.WriteString("\n    ")
+		switch spec.Kind {
+		case engines.RunnerQueryOne, engines.RunnerQueryMany:
+			sql := ast.PG.Render(spec.Stmt)
+			if spec.HasILIKE {
+				sql = strings.ReplaceAll(sql, " LIKE ", " ILIKE ")
+			}
+			sql = strings.ReplaceAll(sql, " FROM dual", "")
+			sql = RenderMyBatisSQL(sql, spec.Params, nil)
+			sql = strings.ReplaceAll(sql, `\`, `\\`)
+			sql = strings.ReplaceAll(sql, `"`, `\"`)
+			sql = strings.ReplaceAll(sql, "\n", " ")
+			b.WriteString("\n    @Select(")
+			b.WriteString(`"`)
+			b.WriteString(sql)
+			b.WriteString(`"`)
+			b.WriteString(")\n")
+		}
+		b.WriteString("    ")
 		genMapperMethodSig(&b, spec, modelType)
 		b.WriteString("\n")
 	}
