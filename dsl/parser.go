@@ -1,8 +1,8 @@
-package main
+// Package dsl parses sqlgen .sql DSL files into meta.ParsedFile.
+package dsl
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/sqlgen-km/sqlgen/meta"
@@ -19,7 +19,7 @@ type FieldMap = meta.FieldMapDef
 
 // inlineModel is a model declared inline in a query scope (may be unnamed).
 type inlineModel struct {
-	Name      string     // empty if unnamed; for scalar shorthand, this is the type name
+	Name      string // empty if unnamed; for scalar shorthand, this is the type name
 	Fields    []FieldDef
 	FieldMaps []FieldMap // field→column mapping, e.g. {id:user_id}
 	Scalar    bool       // true for -- model int64 shorthand
@@ -27,7 +27,7 @@ type inlineModel struct {
 
 // ── Parser ──
 
-func parseFile(path string, src []byte) (*ParsedFile, error) {
+func ParseFile(path string, src []byte) (*ParsedFile, error) {
 	p := &fileParser{
 		path:  path,
 		src:   src,
@@ -541,22 +541,3 @@ func splitComma(s string) []string {
 	parts = append(parts, s[start:])
 	return parts
 }
-
-func toCamel(s string) string {
-	s = strings.ReplaceAll(s, "-", "_")
-	parts := strings.Split(s, "_")
-	for i, p := range parts {
-		if i == 0 {
-			parts[i] = strings.ToLower(p)
-		} else if len(p) > 0 {
-			parts[i] = strings.ToUpper(p[:1]) + p[1:]
-		}
-	}
-	return strings.Join(parts, "")
-}
-
-func toPascalFromPath(name string) string {
-	return meta.ToPascal(strings.ReplaceAll(name, "-", "_"))
-}
-
-var _ = strconv.Itoa

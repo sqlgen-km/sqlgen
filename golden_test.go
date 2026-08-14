@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/sqlgen-km/sqlgen/dsl"
 	"github.com/sqlgen-km/sqlgen/engines"
 	"github.com/sqlgen-km/sqlgen/languages/golang"
 	"github.com/sqlgen-km/sqlgen/languages/java"
@@ -55,13 +56,13 @@ func TestGolden(t *testing.T) {
 			// Golden test: generate and compare against .golden files
 			tmpDir := t.TempDir()
 
-			var parsedFiles []*ParsedFile
+			var parsedFiles []*dsl.ParsedFile
 			for _, f := range sqlgenFiles {
 				src, err := os.ReadFile(f)
 				if err != nil {
 					t.Fatal(err)
 				}
-				pf, err := parseFile(f, src)
+				pf, err := dsl.ParseFile(f, src)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -150,13 +151,13 @@ func TestGolden(t *testing.T) {
 
 // testErrorCase runs parse + generate on error test inputs.
 func testErrorCase(t *testing.T, files []string, subdir string) {
-	var parsedFiles []*ParsedFile
+	var parsedFiles []*dsl.ParsedFile
 	for _, f := range files {
 		src, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
 		}
-		pf, err := parseFile(f, src)
+		pf, err := dsl.ParseFile(f, src)
 		if err != nil {
 			return // parse-level error is fine
 		}
@@ -210,13 +211,13 @@ func TestJavaGolden(t *testing.T) {
 			}
 
 			// Parse DSL
-			var parsedFiles []*ParsedFile
+			var parsedFiles []*dsl.ParsedFile
 			for _, f := range sqlFiles {
 				src, err := os.ReadFile(f)
 				if err != nil {
 					t.Fatal(err)
 				}
-				pf, err := parseFile(f, src)
+				pf, err := dsl.ParseFile(f, src)
 				if err != nil {
 					t.Fatal(err)
 				}

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/sqlgen-km/sqlgen/dsl"
 	"github.com/sqlgen-km/sqlgen/engines"
 	"github.com/sqlgen-km/sqlgen/languages/golang"
 	"github.com/sqlgen-km/sqlgen/languages/java"
@@ -57,7 +58,7 @@ func main() {
 					fmt.Fprintf(os.Stderr, "sqlgen: %v\n", err)
 					os.Exit(1)
 				}
-				pf, err := parseFile(path, src)
+				pf, err := dsl.ParseFile(path, src)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "sqlgen: %v\n", err)
 					os.Exit(1)
@@ -134,7 +135,7 @@ func main() {
 					fmt.Fprintf(os.Stderr, "sqlgen: %v\n", err)
 					os.Exit(1)
 				}
-				pf, err := parseFile(path, src)
+				pf, err := dsl.ParseFile(path, src)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "sqlgen: %v\n", err)
 					os.Exit(1)
@@ -150,7 +151,7 @@ func main() {
 }
 
 type pkgFiles struct {
-	files []*ParsedFile
+	files []*dsl.ParsedFile
 }
 
 var _ = strings.TrimSpace
