@@ -10,6 +10,8 @@ import (
 	"github.com/sqlgen-km/sqlgen/engines"
 	"github.com/sqlgen-km/sqlgen/languages/golang"
 	"github.com/sqlgen-km/sqlgen/languages/java"
+	"github.com/sqlgen-km/sqlgen/lsp"
+	"github.com/sqlgen-km/sqlgen/registry"
 )
 
 // version is set at build time via -ldflags.
@@ -18,6 +20,14 @@ var version = "dev"
 func main() {
 	if len(os.Args) == 2 && os.Args[1] == "version" {
 		fmt.Println(version)
+		return
+	}
+
+	if len(os.Args) >= 2 && os.Args[1] == "lsp" {
+		if err := lsp.Run(version); err != nil {
+			fmt.Fprintf(os.Stderr, "sqlgen lsp: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 
@@ -34,7 +44,7 @@ func main() {
 		// Resolve Go engines once
 		goEngineMap := make(map[string]engines.Engine, len(engineNames))
 		for _, name := range engineNames {
-			eng, err := getEngine(name)
+			eng, err := registry.GetEngine(name)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "sqlgen: Go engine %q: %v\n", name, err)
 				os.Exit(1)
@@ -114,7 +124,7 @@ func main() {
 	if cfg.Java != nil {
 		javaEngines := make([]java.Engine, 0, len(engineNames))
 		for _, name := range engineNames {
-			eng, err := getJavaEngine(name)
+			eng, err := registry.GetJavaEngine(name)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "sqlgen: Java engine %q: %v\n", name, err)
 				os.Exit(1)

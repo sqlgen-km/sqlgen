@@ -9,6 +9,7 @@ import (
 	"github.com/sqlgen-km/sqlgen/engines"
 	"github.com/sqlgen-km/sqlgen/languages/golang"
 	"github.com/sqlgen-km/sqlgen/languages/java"
+	"github.com/sqlgen-km/sqlgen/registry"
 )
 
 func TestGolden(t *testing.T) {
@@ -91,7 +92,7 @@ func TestGolden(t *testing.T) {
 			// Resolve Go engines for golden test
 			goEngineMap := make(map[string]engines.Engine, len(tt.engines))
 			for _, name := range tt.engines {
-				eng, err := getEngine(name)
+				eng, err := registry.GetEngine(name)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -236,7 +237,7 @@ func TestJavaGolden(t *testing.T) {
 			// Resolve Java engines
 			javaEngs := make([]java.Engine, 0, len(tt.engines))
 			for _, name := range tt.engines {
-				eng, err := getJavaEngine(name)
+				eng, err := registry.GetJavaEngine(name)
 				if err != nil {
 					t.Fatal(err)
 				}
